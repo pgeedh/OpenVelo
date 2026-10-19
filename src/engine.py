@@ -1,5 +1,5 @@
 """
-NintAi analysis engine.
+OpenVelo analysis engine.
 
 Pure functions that turn a video or photo into fit metrics, annotated frames and
 recommendations. No GUI calls (cv2.imshow etc.) so it can power both the
@@ -10,32 +10,25 @@ import sys
 
 import cv2
 import numpy as np
-import pandas as pd
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src import core  # noqa: E402
 from src import fit_profiles as fp  # noqa: E402
 from src import pose_backends as pb  # noqa: E402
-from src import biomech  # noqa: E402
+from src import kinematics as kin  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
-FILTER_KEYS = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear',
-               'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
-               'left_wrist', 'right_wrist', 'left_hip', 'right_hip',
-               'left_knee', 'right_knee', 'left_ankle', 'right_ankle',
-               'left_heel', 'right_heel', 'left_toe', 'right_toe']
 
 SKELETON = [('shoulder', 'elbow'), ('elbow', 'wrist'), ('shoulder', 'hip'),
             ('hip', 'knee'), ('knee', 'ankle'), ('ear', 'shoulder')]
 
-# Apple-inspired aesthetic palette (BGR)
-C_BONE = (245, 200, 40)        # Electric cyan-blue
-C_JOINT = (60, 60, 255)       # Coral red
-C_FOOT = (0, 215, 255)        # Vibrant amber
-C_OK = (94, 197, 34)          # Emerald green
-C_WATCH = (0, 170, 255)       # Amber warning
-C_FIX = (68, 68, 239)         # Crimson alert
+# Brand palette (BGR), matching the web studio tokens
+C_BONE = (247, 245, 244)       # near-white bones
+C_JOINT = (44, 227, 226)       # brand yellow joints
+C_FOOT = (44, 227, 226)        # brand yellow foot triangle
+C_OK = (167, 218, 81)          # in range
+C_WATCH = (83, 185, 252)       # borderline
+C_FIX = (139, 142, 249)        # adjust
 STATUS_BGR = {'ok': C_OK, 'watch': C_WATCH, 'fix': C_FIX, 'na': (200, 200, 200)}
 
 
@@ -58,7 +51,7 @@ def _label(img, text, org, color, scale=0.6):
     x, y = org
     x = max(2, min(x, img.shape[1] - w - 8))
     y = max(h + 6, min(y, img.shape[0] - 6))
-    cv2.rectangle(img, (x - 6, y - h - 6), (x + w + 6, y + base + 3), (16, 18, 24), -1)
+    cv2.rectangle(img, (x - 6, y - h - 6), (x + w + 6, y + base + 3), (16, 13, 12), -1)
     cv2.rectangle(img, (x - 6, y - h - 6), (x + w + 6, y + base + 3), (45, 50, 65), 1, cv2.LINE_AA)
     cv2.putText(img, text, (x, y), font, scale, color, th, cv2.LINE_AA)
 
@@ -79,11 +72,11 @@ def draw_overlay(img, lm, angles=None, statuses=None, title=None):
 
     for a, b in SKELETON:
         if a in lm and b in lm:
-            cv2.line(img, _pt(lm[a]), _pt(lm[b]), C_BONE, thick + 1, cv2.LINE_AA)
+            cv2.line(img, _pt(lm[a]), _pt(lm[b]), C_BONE, thick, cv2.LINE_AA)
 
     for k in ('ear', 'shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle'):
         if k in lm:
-            cv2.circle(img, _pt(lm[k]), int(7 * scale), (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(img, _pt(lm[k]), int(7 * scale), (16, 13, 12), -1, cv2.LINE_AA)
             cv2.circle(img, _pt(lm[k]), int(5 * scale), C_JOINT, -1, cv2.LINE_AA)
 
     # Angle labels next to joints
@@ -118,19 +111,68 @@ def _to_jpeg(img, width=640, quality=80):
 # --------------------------------------------------------------------------- #
 # Video Analysis
 # --------------------------------------------------------------------------- #
+OVERLAY_JOINTS = ['ear', 'shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle', 'heel', 'toe', 'ball']
+
+
+def resolve_backend(backend):
+    avail = pb.available()
+    if backend == 'auto':
+        return 'mediapipe' if avail.get('mediapipe') else 'rtmpose'
+    if not avail.get(backend):
+        return 'mediapipe'
+    return backend
+
+
+def score_result(res, profile_key, flexibility='average', pains=()):
+    """(Re)compute ranges, statuses, score and recommendations for a result dict in place."""
+    ranges, notes = fp.personalize(profile_key, flexibility, pains)
+    metrics = res['metrics']
+    bio = res.get('biomech') or {}
+    res['profile'] = profile_key
+    res['profile_name'] = fp.PROFILES[profile_key]['name']
+    res['rider'] = dict(res.get('rider') or {}, flexibility=flexibility, pains=list(pains or ()))
+    res['ranges'] = {k: list(v) for k, v in ranges.items()}
+    res['range_notes'] = notes
+    res['statuses'] = {k: fp.status_for(metrics.get(k), ranges[k]) for k in fp.METRICS}
+    res['score'] = fp.fit_score(metrics, profile_key, ranges)
+
+    saddle = None
+    if res.get('mode') == 'video' and metrics.get('knee_ext'):
+        lo, hi = ranges['knee_ext']
+        ke = metrics['knee_ext']
+        if not lo <= ke <= hi:
+            target = lo + 1.5 if ke < lo else hi - 1.5
+            saddle = kin.saddle_change_mm(ke, target, bio.get('thigh_px'), bio.get('shank_px'),
+                                          bio.get('mm_per_px'))
+    bio['saddle_adj_mm'] = saddle
+    res['biomech'] = bio
+    res['recommendations'] = fp.build_recommendations(
+        metrics, profile_key,
+        {'torso_range': (res.get('extra') or {}).get('torso_range'), 'mode': res.get('mode'),
+         'saddle_adj_mm': saddle, 'hip_rock_mm': bio.get('hip_rock_mm'), 'pains': pains},
+        ranges=ranges)
+    return res
+
+
 def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
-                  target_fps=15, max_seconds=60, max_width=1280, keep_preview=True,
-                  output_video=None, backend='auto', crank_mm=172.5, rider_height_cm=None):
+                  target_fps=30, max_seconds=45, max_width=1280, backend='auto', crank_mm=172.5, rider_height_cm=None,
+                  flexibility='average', pains=()):
     """
     Analyse a side-on cycling video.
 
-    backend: 'auto' (chooses rtmpose if available, else mediapipe), 'rtmpose', or 'mediapipe'.
-    progress_cb(fraction, message) is called periodically if provided.
-    Returns a result dict.
+    progress_cb(fraction, message, stage) is called as work proceeds.
+    Returns a JSON-friendly result dict (snapshots hold JPEG bytes).
     """
+    def report(frac, msg, stage):
+        if progress_cb:
+            try:
+                progress_cb(frac, msg, stage)
+            except TypeError:
+                progress_cb(frac, msg)
+
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
-        raise AnalysisError("Couldn't open this video. Try exporting it as .mp4 (H.264).")
+        raise AnalysisError("Unable to open this video. Export it as MP4 (H.264) and try again.")
 
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     if src_fps <= 1 or src_fps > 240:
@@ -141,26 +183,23 @@ def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
     if max_src_frames and total:
         total = min(total, max_src_frames)
 
-    # Resolve backend
-    avail = pb.available()
-    if backend == 'auto':
-        backend = 'rtmpose' if avail.get('rtmpose') else 'mediapipe'
-    elif backend not in avail or not avail[backend]:
+    backend = resolve_backend(backend)
+    report(0.02, f"Loading {pb.BACKENDS[backend]['name']}", 'detect')
+    try:
+        detector = pb.make_backend(backend, mode='video')
+    except Exception:
+        if backend == 'mediapipe':
+            raise
         backend = 'mediapipe'
+        detector = pb.make_backend(backend, mode='video')
 
-    detector = pb.make_backend(backend, mode='video')
-    filters = {k: core.LazyOneEuroFilter() for k in FILTER_KEYS}
-
-    frames = []          # per processed frame data
-    raw_landmarks_list = []
-    times_list = []
-    previews = []        # JPEG bytes of annotated frames
+    raw_frames, times, src_indices = [], [], []
     side_votes = {'left': 0, 'right': 0}
-    locked_side = None
-    processed = detected_count = 0
-    writer = None
+    processed = detected = 0
+    frame_size = None
 
     src_idx = -1
+    last_t = -1.0
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -170,203 +209,239 @@ def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
             break
         if src_idx % stride:
             continue
+        pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+        t = pos_ms / 1000.0 if pos_ms and pos_ms > 0 else src_idx / src_fps
+        if t <= last_t:  # variable-frame-rate files can report stale timestamps
+            t = last_t + stride / src_fps
+        last_t = t
 
         frame = _resize(frame, max_width)
-        t = src_idx / src_fps
+        frame_size = frame.shape[1], frame.shape[0]
         processed += 1
-
         raw = detector.process(frame, ts_ms=int(t * 1000))
-        # raw is dict {name: (x, y, conf)}
-        raw_xy = {k: [v[0], v[1]] for k, v in raw.items()}
-        clean = {k: (filters[k](t, v) if k in filters else np.asarray(v)) for k, v in raw_xy.items()}
+        if raw:
+            detected += 1
+            side_votes[core.detect_side({k: v[:2] for k, v in raw.items()})] += 1
+        raw_frames.append(raw or {})
+        times.append(t)
+        src_indices.append(src_idx)
 
-        angles = {}
-        unified = {}
-        if clean:
-            detected_count += 1
-            side = core.detect_side(clean)
-            if locked_side is None:
-                side_votes[side] += 1
-                if sum(side_votes.values()) >= 15:
-                    locked_side = 'left' if side_votes['left'] >= side_votes['right'] else 'right'
-            cur_side = locked_side or side
-            unified = core.get_primary_landmarks(clean, cur_side)
-            angles = core.analyze_posture(unified)
-            frames.append({'src_idx': src_idx, 't': t, 'angles': angles,
-                           'lm': {k: np.asarray(v).tolist() for k, v in unified.items() if k != 'side'}})
-            raw_landmarks_list.append(raw)
-            times_list.append(t)
-
-        if keep_preview or output_video:
-            vis = frame.copy()
-            if unified:
-                draw_overlay(vis, unified, angles)
-            else:
-                _label(vis, "Locating rider...", (20, 40), (0, 170, 255), 0.8)
-            if keep_preview and len(previews) < 600:
-                previews.append({'t': t, 'jpg': _to_jpeg(vis)})
-            if output_video:
-                if writer is None:
-                    h, w = vis.shape[:2]
-                    writer = cv2.VideoWriter(output_video, cv2.VideoWriter_fourcc(*'mp4v'),
-                                             src_fps / stride, (w, h))
-                writer.write(vis)
-
-        if progress_cb and processed % 5 == 0:
-            frac = (src_idx / total) if total else 0.0
-            progress_cb(min(frac, 0.99), f"Tracking rider with {pb.BACKENDS[backend]['name']}... {t:.1f}s")
+        if processed % 6 == 0:
+            frac = (src_idx / total) if total else 0.5
+            report(0.05 + 0.75 * min(frac, 1.0), f"Tracking rider · {t:.1f} s", 'track')
 
     cap.release()
     detector.close()
-    if writer is not None:
-        writer.release()
 
-    duration = (src_idx + 1) / src_fps if src_idx >= 0 else 0
+    duration = times[-1] - times[0] if len(times) > 1 else 0.0
     if processed == 0:
-        raise AnalysisError("The video appears to be empty or unreadable.")
-    if not frames:
+        raise AnalysisError("The video is empty or unreadable. Export it as MP4 (H.264) and try again.")
+    if detected == 0:
         raise AnalysisError(
-            "No rider was detected. Make sure the whole body and bike are in frame, "
-            "filmed from the side, with adequate lighting.")
+            "No rider found. Film from the side with the whole bike and rider in frame, "
+            "in good light, then upload again.")
 
-    df = pd.DataFrame([dict(f['angles'], t=f['t'], i=n) for n, f in enumerate(frames)])
-    valid = df[df['knee'] > 0]
-    if len(valid) < 5:
-        raise AnalysisError("The leg wasn't visible clearly enough to measure. "
-                            "Film from the side with hip, knee and ankle clearly in view.")
+    facing = 'left' if side_votes['left'] >= side_votes['right'] else 'right'
+    report(0.82, "Fixing left/right leg swaps", 'model')
+    kin_res = kin.analyze(raw_frames, times, facing, crank_mm=crank_mm, rider_height_cm=rider_height_cm)
+    report(0.9, "Modelling pedal strokes", 'model')
 
-    chosen_side = locked_side or 'right'
-    facing_right = chosen_side == 'right'
+    ang = kin_res['angles']
+    tracks = kin_res['tracks']
+    knee = ang['knee']
+    if np.isfinite(knee).sum() < 10:
+        raise AnalysisError("The leg wasn't visible clearly enough to measure. Film from the side "
+                            "with hip, knee and ankle in view, then upload again.")
 
-    # Advanced biomechanical sequence analysis
-    bio = biomech.analyze_sequence(raw_landmarks_list, times_list, chosen_side, facing_right,
-                                   crank_mm=crank_mm, rider_height_cm=rider_height_cm)
+    metrics = {k: kin_res['metrics'].get(k) for k in fp.METRICS}
+    if kin_res['method'] != 'harmonic':
+        # Robust percentile fallback when no stable crank phase was found
+        def pct(a, q):
+            a = a[np.isfinite(a)]
+            return float(np.percentile(a, q)) if len(a) else None
+        metrics = {'knee_ext': pct(knee, 97), 'knee_flex': pct(knee, 3), 'hip_closed': pct(ang['hip'], 3),
+                   'torso': pct(ang['torso'], 50), 'shoulder': pct(ang['shoulder'], 50),
+                   'elbow': pct(ang['elbow'], 50)}
+    metrics = {k: (float(v) if v is not None and np.isfinite(v) else 0.0) for k, v in metrics.items()}
 
-    # Extract metrics from biomech per-stroke analysis if available, otherwise robust percentiles
-    ps = bio.get('per_stroke', {})
-    def metric_val(key, fallback_col, q):
-        if key in ps and ps[key] and ps[key].get('median') is not None:
-            return float(ps[key]['median'])
-        s = valid[fallback_col]
-        s = s[s > 0]
-        return float(np.percentile(s, q)) if len(s) else 0.0
+    torso = ang['torso'][np.isfinite(ang['torso'])]
+    torso_range = float(np.percentile(torso, 95) - np.percentile(torso, 5)) if len(torso) > 5 else None
+    knee_range = (metrics['knee_ext'] - metrics['knee_flex']) if metrics['knee_flex'] else None
 
-    metrics = {
-        'knee_ext': metric_val('knee_ext', 'knee', 97),
-        'knee_flex': metric_val('knee_flex', 'knee', 3),
-        'hip_closed': metric_val('hip_closed', 'hip', 3),
-        'torso': metric_val('torso', 'back', 50),
-        'shoulder': metric_val('shoulder', 'arm_torso', 50),
-        'elbow': metric_val('elbow', 'elbow', 50),
-    }
-
-    torso_s = valid['back'][valid['back'] > 0]
-    torso_range = float(np.percentile(torso_s, 95) - np.percentile(torso_s, 5)) if len(torso_s) > 5 else None
-    knee_range = metrics['knee_ext'] - metrics['knee_flex']
-
-    # Quality checks -> friendly warnings
+    der = kin_res['derived']
+    det_rate = detected / float(processed)
     warnings = []
-    det_rate = detected_count / float(processed)
     if det_rate < 0.6:
-        warnings.append(f"Rider was only detected in {det_rate:.0%} of frames — results may be noisy. "
-                        "Better lighting and a contrasting background help.")
-    if duration < 5:
-        warnings.append("Video is shorter than 5s. Record 10–30s of steady pedalling for optimal accuracy.")
-    if knee_range < 35:
-        warnings.append("The knee barely changed angle — pedal through multiple continuous strokes.")
-    side_ratio = _shoulder_overlap(frames)
-    if side_ratio is not None and side_ratio > 0.45:
-        warnings.append("Camera does not look fully side-on (both shoulders visible). "
-                        "Align perpendicular (90°) to the bike frame.")
+        warnings.append(f"The rider was found in only {det_rate:.0%} of frames. Brighter, even light "
+                        "and a plain background will make results steadier.")
+    if duration < 8:
+        warnings.append("The clip is shorter than 8 s. Record 20–30 s of steady pedalling for tighter results.")
+    if knee_range is not None and knee_range < 35:
+        warnings.append("The knee barely changed angle. Pedal continuously while recording.")
+    side_ratio = _shoulder_overlap(raw_frames)
+    knee_sd = (kin_res.get('fit_quality') or {}).get('knee', {}).get('resid_sd')
+    if knee_sd is not None and knee_sd > 5:
+        warnings.append(f"Tracking is noisy (knee scatter ±{knee_sd:.0f}° around the model). Results are "
+                        "approximate: film side-on, steady, in good light, with the rider seated and pedalling.")
+    if side_ratio is not None and side_ratio > 0.35:
+        warnings.append("The camera doesn't look fully side-on (both shoulders are visible). "
+                        "Place it square to the bike, at 90°.")
+    if kin_res['method'] != 'harmonic':
+        warnings.append("The pedal stroke couldn't be modelled, so angles use whole-clip percentiles. "
+                        "Make sure the near foot and pedal are visible through the full stroke.")
+    if not der.get('mm_per_px'):
+        warnings.append("No millimetre scale: the crank circle wasn't clear and no rider height was given, "
+                        "so adjustments are shown in degrees only.")
 
-    # Key frames selection
-    def nearest(col, target):
-        return int((valid[col] - target).abs().idxmin())
+    # Key frames (from the phase model when available)
+    theta = kin_res.get('theta')
+    ev = kin_res.get('events') or {}
+    key_targets = []
+    if theta is not None and ev:
+        key_targets = [('bdc', ev['knee_ext_at'], "Leg extension (bottom of stroke)"),
+                       ('tdc', ev['knee_flex_at'], "Knee bend (top of stroke)"),
+                       ('front', 90.0, "3 o'clock (power phase)")]
+    snap_frames = {}
+    for name, target, title in key_targets:
+        diff = np.abs(((theta - target + 180) % 360) - 180)
+        diff[~np.isfinite(knee)] = np.inf
+        if np.isfinite(diff).any():
+            snap_frames[name] = (int(np.nanargmin(diff)), title)
+    if not snap_frames:
+        snap_frames = {'bdc': (int(np.nanargmax(knee)), "Leg extension (bottom of stroke)"),
+                       'tdc': (int(np.nanargmin(knee)), "Knee bend (top of stroke)")}
 
-    key = {
-        'bdc': (nearest('knee', metrics['knee_ext']), "Bottom of Stroke (BDC)"),
-        'tdc': (nearest('knee', metrics['knee_flex']), "Top of Stroke (TDC)"),
+    report(0.94, "Rendering key frames", 'report')
+    snapshots = _grab_snapshots(path, src_indices, tracks, ang, snap_frames, max_width)
+
+    # Compact per-frame track for the client-side overlay (normalised 0-1)
+    fw, fh = frame_size
+    joints_out = {}
+    for j in OVERLAY_JOINTS:
+        arr = tracks[j]
+        joints_out[j] = [None if not np.all(np.isfinite(p)) else [round(p[0] / fw, 4), round(p[1] / fh, 4)]
+                         for p in arr]
+    angle_out = {k: [None if not np.isfinite(v) else round(float(v), 1) for v in ang[k]]
+                 for k in ('knee', 'hip', 'elbow', 'shoulder', 'torso', 'ankle')}
+    crank = der.get('crank_fit') if (der.get('crank_fit') or {}).get('ok') else None
+    track = {
+        'size': [fw, fh],
+        't': [round(float(x), 3) for x in times],
+        'theta': ([None if not np.isfinite(v) else round(float(v), 1) for v in theta]
+                  if theta is not None else None),
+        'joints': joints_out,
+        'angles': angle_out,
+        'crank': ({'cx': crank['cx'] / fw, 'cy': crank['cy'] / fh, 'r': crank['r'] / fw} if crank else None),
+        'facing': der.get('facing', facing),
     }
-    toe_xs = [(n, f['lm']['toe'][0]) for n, f in enumerate(frames) if 'toe' in f['lm']]
-    if toe_xs:
-        n_front = max(toe_xs, key=lambda p: p[1] if facing_right else -p[1])[0]
-        key['front'] = (n_front, "3 o'clock (Power Phase)")
 
-    statuses = {k: fp.status_for(v, fp.PROFILES[profile_key]['ranges'][k]) for k, v in metrics.items()}
-    snapshots = _grab_snapshots(path, frames, key, max_width, statuses)
+    # Stroke samples for the chart (decimated scatter + fitted curves)
+    stroke = None
+    if kin_res.get('curves'):
+        idx = np.where(np.isfinite(theta) & np.isfinite(knee))[0]
+        idx = idx[::max(1, len(idx) // 500)]
+        stroke = {'curves': kin_res['curves'],
+                  'samples': {'theta': [round(float(theta[i]), 1) for i in idx],
+                              **{k: [None if not np.isfinite(ang[k][i]) else round(float(ang[k][i]), 1)
+                                     for i in idx] for k in ('knee', 'hip', 'ankle', 'torso', 'elbow')}},
+                  'events': ev}
 
-    recs = fp.build_recommendations(metrics, profile_key, {'torso_range': torso_range, 'mode': 'video'})
-
-    # Geometric saddle adjustment (law-of-cosines)
-    der = bio.get('derived', {})
-    target_ext = fp.PROFILES[profile_key]['ranges']['knee_ext']
-    target_mid = (target_ext[0] + target_ext[1]) / 2.0
-    calc_saddle_adj = biomech.saddle_change_mm(metrics['knee_ext'], target_mid,
-                                              der.get('thigh_px'), der.get('shank_px'), der.get('mm_per_px'))
-    if calc_saddle_adj is not None:
-        der['saddle_adj_mm'] = float(calc_saddle_adj)
-
-    return {
+    detail = kin_res.get('detail', {})
+    res = {
         'mode': 'video',
         'backend': backend,
         'backend_name': pb.BACKENDS[backend]['name'],
-        'profile': profile_key,
+        'method': kin_res['method'],
         'metrics': metrics,
-        'statuses': statuses,
-        'score': fp.fit_score(metrics, profile_key),
-        'recommendations': recs,
+        'metric_detail': {k: {kk: vv for kk, vv in v.items()} for k, v in detail.items()},
         'warnings': warnings,
         'snapshots': snapshots,
-        'timeseries': df.rename(columns={'back': 'torso', 'arm_torso': 'shoulder'}),
-        'previews': previews,
+        'track': track,
+        'stroke': stroke,
         'biomech': {
             'cadence_rpm': der.get('cadence_rpm'),
             'kops_mm': der.get('kops_mm'),
             'hip_rock_mm': der.get('hip_rock_mm'),
+            'hip_sway_mm': der.get('hip_sway_mm'),
+            'ankle_range': kin_res['metrics'].get('ankle_range'),
+            'hip_open': kin_res['metrics'].get('hip_open'),
+            'knee_at_bdc': ev.get('knee_at_bdc'),
             'scale_source': der.get('scale_source'),
-            'per_stroke': ps,
-            'cycles_detected': len(bio.get('cycles', [])),
-            'saddle_adj_mm': der.get('saddle_adj_mm'),
+            'mm_per_px': der.get('mm_per_px'),
+            'thigh_px': der.get('thigh_px'),
+            'shank_px': der.get('shank_px'),
+            'thigh_mm': der.get('thigh_mm'),
+            'shank_mm': der.get('shank_mm'),
+            'cycles_detected': der.get('strokes', 0),
+            'per_stroke': kin_res.get('per_stroke', {}),
+            'phase_method': kin_res.get('phase_method'),
+        },
+        'quality': {
+            'grade': _quality_grade(det_rate, duration, side_ratio, knee_sd, kin_res['method']),
+            'detection_rate': det_rate,
+            'frames_analysed': processed,
+            'fps': kin_res['fps'],
+            'duration_s': duration,
+            'swaps_fixed': kin_res['quality'].get('swaps_fixed', 0),
+            'side_overlap': side_ratio,
+            'crank_fit_rms_pct': (100 * crank['rms'] / crank['r']) if crank else None,
+            'knee_model_r2': (kin_res.get('fit_quality') or {}).get('knee', {}).get('r2'),
+            'knee_model_sd': (kin_res.get('fit_quality') or {}).get('knee', {}).get('resid_sd'),
         },
         'extra': {
-            'duration_s': duration, 'frames_analysed': processed,
-            'detection_rate': det_rate, 'side': chosen_side,
-            'torso_range': torso_range, 'knee_range': knee_range,
+            'duration_s': duration, 'frames_analysed': processed, 'detection_rate': det_rate,
+            'side': kin_res.get('near_side', facing), 'torso_range': torso_range, 'knee_range': knee_range,
         },
+        'rider': {'crank_mm': crank_mm, 'height_cm': rider_height_cm},
     }
+    score_result(res, profile_key, flexibility, pains)
+    report(1.0, "Done", 'report')
+    return res
 
 
-def _shoulder_overlap(frames):
+def _quality_grade(det_rate, duration, side_ratio, knee_sd, method):
+    """'good' | 'fair' | 'poor' capture grade shown next to the results."""
+    pts = 0
+    pts += det_rate < 0.8
+    pts += duration < 8
+    pts += 2 * (side_ratio is not None and side_ratio > 0.35)
+    pts += 2 * (knee_sd is not None and knee_sd > 5) + (knee_sd is not None and 3.5 < knee_sd <= 5)
+    pts += 2 * (method != 'harmonic')
+    return 'good' if pts == 0 else 'fair' if pts <= 2 else 'poor'
+
+
+def _shoulder_overlap(raw_frames):
     """Ratio of left/right shoulder separation to torso length (0 = perfect side view)."""
     vals = []
-    for f in frames[:: max(1, len(frames) // 50)]:
-        lm = f['lm']
-        if all(k in lm for k in ('left_shoulder', 'right_shoulder', 'shoulder', 'hip')):
-            sep = np.linalg.norm(np.subtract(lm['left_shoulder'], lm['right_shoulder']))
-            torso = np.linalg.norm(np.subtract(lm['shoulder'], lm['hip']))
+    for f in raw_frames[:: max(1, len(raw_frames) // 60)]:
+        need = ('left_shoulder', 'right_shoulder', 'left_hip', 'right_hip')
+        if all(k in f for k in need):
+            sep = np.hypot(f['left_shoulder'][0] - f['right_shoulder'][0],
+                           f['left_shoulder'][1] - f['right_shoulder'][1])
+            mid_s = np.add(f['left_shoulder'][:2], f['right_shoulder'][:2]) / 2
+            mid_h = np.add(f['left_hip'][:2], f['right_hip'][:2]) / 2
+            torso = np.linalg.norm(mid_s - mid_h)
             if torso > 1:
                 vals.append(sep / torso)
     return float(np.median(vals)) if vals else None
 
 
-def _grab_snapshots(path, frames, key, max_width, statuses):
+def _grab_snapshots(path, src_indices, tracks, ang, key, max_width):
+    """Annotated JPEG key frames drawn from the smoothed, identity-corrected tracks."""
     cap = cv2.VideoCapture(path)
     out = {}
     for name, (n, title) in key.items():
-        f = frames[n]
-        cap.set(cv2.CAP_PROP_POS_FRAMES, f['src_idx'])
+        cap.set(cv2.CAP_PROP_POS_FRAMES, src_indices[n])
         ok, img = cap.read()
         if not ok:
             continue
         img = _resize(img, max_width)
-        st = dict(statuses)
-        if name == 'tdc':
-            st['knee_ext'] = statuses.get('knee_flex', 'na')
-        elif name != 'bdc':
-            st['knee_ext'] = 'na'
-        draw_overlay(img, f['lm'], f['angles'], st, title=title)
-        out[name] = {'title': title, 'jpg': _to_jpeg(img, width=1100, quality=88),
-                     'angles': f['angles']}
+        lm = {j: tracks[j][n] for j in kin.SIDE_JOINTS if np.all(np.isfinite(tracks[j][n]))}
+        angles = {'knee': ang['knee'][n], 'hip': ang['hip'][n], 'elbow': ang['elbow'][n],
+                  'arm_torso': ang['shoulder'][n]}
+        angles = {k: float(v) for k, v in angles.items() if np.isfinite(v)}
+        draw_overlay(img, lm, angles)
+        out[name] = {'title': title, 'jpg': _to_jpeg(img, width=1100, quality=88), 'angles': angles}
     cap.release()
     return out
 
@@ -386,7 +461,7 @@ def load_image(path_or_bytes):
 
 
 def analyze_image(path_or_bytes, profile_key=fp.DEFAULT_PROFILE, crank_position='auto',
-                  max_width=1600, backend='auto'):
+                  max_width=1600, backend='auto', flexibility='average', pains=()):
     """
     Analyse a single side-on photo.
 
@@ -395,12 +470,7 @@ def analyze_image(path_or_bytes, profile_key=fp.DEFAULT_PROFILE, crank_position=
     """
     img = _resize(load_image(path_or_bytes), max_width)
 
-    avail = pb.available()
-    if backend == 'auto':
-        backend = 'rtmpose' if avail.get('rtmpose') else 'mediapipe'
-    elif backend not in avail or not avail[backend]:
-        backend = 'mediapipe'
-
+    backend = resolve_backend(backend)
     detector = pb.make_backend(backend, mode='image')
     try:
         raw = detector.process(img)
@@ -436,11 +506,12 @@ def analyze_image(path_or_bytes, profile_key=fp.DEFAULT_PROFILE, crank_position=
         warnings.append("Couldn't see the leg clearly (hip / knee / ankle).")
     warnings.append("A photo represents a static snapshot. For dynamic pedalling biomechanics, upload a 10–30s video.")
 
-    statuses = {k: fp.status_for(v, fp.PROFILES[profile_key]['ranges'][k]) for k, v in metrics.items()}
+    ranges, _ = fp.personalize(profile_key, flexibility, pains)
+    statuses = {k: fp.status_for(v, ranges[k]) for k, v in metrics.items()}
     vis = img.copy()
     draw_overlay(vis, lm, angles, statuses)
 
-    return {
+    res = {
         'mode': 'image',
         'backend': backend,
         'backend_name': pb.BACKENDS[backend]['name'],
@@ -453,11 +524,11 @@ def analyze_image(path_or_bytes, profile_key=fp.DEFAULT_PROFILE, crank_position=
         'warnings': warnings,
         'snapshots': {'photo': {'title': 'Your Position', 'jpg': _to_jpeg(vis, width=1400, quality=90),
                                 'angles': angles}},
-        'timeseries': None,
-        'previews': [],
         'biomech': {},
+        'quality': {},
         'extra': {'side': side, 'crank_position': crank_position},
     }
+    return score_result(res, profile_key, flexibility, pains)
 
 
 def save_snapshots(result, out_dir):

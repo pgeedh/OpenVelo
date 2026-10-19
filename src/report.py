@@ -9,12 +9,14 @@ from src import fit_profiles as fp
 
 STATUS_TXT = {'ok': 'In range', 'watch': 'Borderline', 'fix': 'Adjust', 'na': 'n/a'}
 STATUS_RGB = {'ok': (22, 163, 74), 'watch': (217, 119, 6), 'fix': (220, 38, 38), 'na': (120, 120, 120)}
-ACCENT = (14, 116, 144)
+ACCENT = (97, 98, 12)        # brand olive (readable form of the logo yellow)
+BRAND_YELLOW = (226, 227, 44)
+INK = (23, 23, 6)
 
 
 def _latin(text):
     """Core PDF fonts are latin-1 only; map common unicode to safe equivalents."""
-    repl = {'°': ' deg', '—': '-', '–': '-', '’': "'", '‘': "'", '“': '"', '”': '"',
+    repl = {'°': ' deg', '\u2014': '-', '–': '-', '’': "'", '‘': "'", '“': '"', '”': '"',
             '…': '...', '•': '-', '≈': '~', '×': 'x'}
     for a, b in repl.items():
         text = text.replace(a, b)
@@ -23,12 +25,14 @@ def _latin(text):
 
 class BikeFitPDF(FPDF):
     def header(self):
-        self.set_fill_color(*ACCENT)
+        self.set_fill_color(*INK)
         self.rect(0, 0, 210, 18, 'F')
-        self.set_text_color(255, 255, 255)
+        self.set_fill_color(*BRAND_YELLOW)
+        self.rect(0, 18, 210, 1.2, 'F')
+        self.set_text_color(*BRAND_YELLOW)
         self.set_font('Helvetica', 'B', 14)
         self.set_xy(10, 4)
-        self.cell(0, 10, 'NintAi  |  Bike Fit Report', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(0, 10, 'OpenVelo  |  Bike Fit Report', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_text_color(0, 0, 0)
         self.ln(6)
 
@@ -36,7 +40,7 @@ class BikeFitPDF(FPDF):
         self.set_y(-14)
         self.set_font('Helvetica', 'I', 8)
         self.set_text_color(120, 120, 120)
-        self.cell(0, 4, 'Nintai (Japanese for Perseverance) - Created with love for the passion of Triathlon by Pruthvi',
+        self.cell(0, 4, 'OpenVelo - open-source bike fitting. Created with love for the passion of triathlon by Pruthvi',
                   align='C', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.cell(0, 4, f'Page {self.page_no()}  -  2D video estimate, not medical advice.', align='C')
         self.set_text_color(0, 0, 0)
@@ -67,6 +71,19 @@ def generate_fit_report(result, snapshot_paths, output_path=None, coach_text=Non
     who = f"Rider: {rider_name}   |   " if rider_name else ""
     pdf.cell(0, 6, _latin(f"{who}Style: {prof['name']}   |   {datetime.now():%d %b %Y %H:%M}   |   "
                           f"Source: {result['mode']}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    bio = result.get('biomech') or {}
+    extras = []
+    if bio.get('cadence_rpm'):
+        extras.append(f"Cadence {bio['cadence_rpm']:.0f} rpm")
+    if bio.get('cycles_detected'):
+        extras.append(f"{bio['cycles_detected']} pedal strokes modelled")
+    if (result.get('quality') or {}).get('grade'):
+        extras.append(f"{result['quality']['grade'].capitalize()} capture quality")
+    if extras:
+        pdf.set_font('Helvetica', '', 9)
+        pdf.set_text_color(90, 90, 90)
+        pdf.cell(0, 5, _latin('   |   '.join(extras)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_text_color(0, 0, 0)
     if result.get('score') is not None:
         pdf.set_font('Helvetica', 'B', 22)
         sc = result['score']
@@ -94,20 +111,24 @@ def generate_fit_report(result, snapshot_paths, output_path=None, coach_text=Non
 
     # Metrics table
     pdf.section('Measured angles')
-    widths = [70, 28, 40, 30]
+    widths = [64, 38, 40, 30]
+    ranges = result.get('ranges') or prof['ranges']
+    detail = result.get('metric_detail') or {}
     pdf.set_font('Helvetica', 'B', 10)
-    pdf.set_fill_color(236, 244, 247)
-    for w, h in zip(widths, ['Metric', 'Value', 'Target range', 'Status']):
+    pdf.set_fill_color(246, 246, 222)
+    for w, h in zip(widths, ['Metric', 'Value (95% range)', 'Target range', 'Status']):
         pdf.cell(w, 8, h, border=1, align='C', fill=True)
     pdf.ln()
     pdf.set_font('Helvetica', '', 10)
     for k, meta in fp.METRICS.items():
         v = result['metrics'].get(k, 0)
         st = result['statuses'].get(k, 'na')
-        lo, hi = prof['ranges'][k]
+        lo, hi = ranges[k]
+        ci = (detail.get(k) or {}).get('ci')
+        val = f"{v:.1f} deg" + (f" +/-{(ci[1] - ci[0]) / 2:.1f}" if ci else "") if v else "-"
         pdf.cell(widths[0], 8, _latin(meta['label']), border=1)
-        pdf.cell(widths[1], 8, f"{v:.0f} deg" if v else "-", border=1, align='C')
-        pdf.cell(widths[2], 8, f"{lo}-{hi} deg", border=1, align='C')
+        pdf.cell(widths[1], 8, val, border=1, align='C')
+        pdf.cell(widths[2], 8, f"{lo:g}-{hi:g} deg", border=1, align='C')
         pdf.set_text_color(*STATUS_RGB[st])
         pdf.cell(widths[3], 8, STATUS_TXT[st], border=1, align='C')
         pdf.set_text_color(0, 0, 0)

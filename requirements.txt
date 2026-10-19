@@ -1,23 +1,20 @@
-# Computer Vision & Pose Tracking SOTA
+# Pose estimation & video
 mediapipe>=0.10.14
-rtmlib>=0.0.15
-onnxruntime>=1.19.0
 opencv-python-headless>=4.10.0
 
-# Biomechanics & Kinematics Signal Processing
+# Kinematics
 numpy>=1.26.0
 scipy>=1.13.0
-pandas>=2.2.0
 
-# PDF Generation
-fpdf2>=2.8.0
-
-# AI Coach Intelligence
-google-genai>=1.0.0
-python-dotenv>=1.0.0
-
-# Web Application & Studio Server
+# Web studio
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
-requests>=2.31.0
+
+# PDF reports
+fpdf2>=2.8.0
+
+# Optional second pose engine (RTMPose · Halpe-26). Remove these two lines
+# for a lighter install; the studio falls back to MediaPipe automatically.
+rtmlib>=0.0.15
+onnxruntime>=1.19.0

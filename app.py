@@ -1,17 +1,16 @@
 """
-NintAi Studio — Main Application Entry Point.
+OpenVelo Studio: main application entry point.
 
 Run directly with:
     python app.py
 """
 import argparse
-import sys
 import webbrowser
 import uvicorn
 
 
 def main():
-    parser = argparse.ArgumentParser(description="NintAi: The AI-Powered Bike Fit Studio")
+    parser = argparse.ArgumentParser(description="OpenVelo: open-source video bike fitting")
     parser.add_argument("--host", default="127.0.0.1", help="Host interface (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8501, help="Port to bind (default: 8501)")
     parser.add_argument("--no-browser", action="store_true", help="Do not automatically open the browser")
@@ -19,12 +18,8 @@ def main():
     args = parser.parse_args()
 
     url = f"http://{args.host}:{args.port}"
-    print("\n" + "=" * 60)
-    print("  🚴  NintAi: AI-Powered Bike Fit Studio (v2.0)")
-    print("  SOTA Pose Tracking · Kinematic Cycles · Apple UI Design")
-    print("=" * 60)
-    print(f"  👉 Opening Web Studio at: {url}")
-    print("  Press Ctrl+C to stop the studio.\n")
+    print(f"\n  OpenVelo 2.0 is running at {url}")
+    print("  Press Ctrl+C to stop.\n")
 
     if not args.no_browser:
         import threading

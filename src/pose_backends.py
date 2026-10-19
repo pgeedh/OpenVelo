@@ -2,7 +2,7 @@
 Pluggable pose-estimation backends.
 
 All backends return the same structure per frame:
-    {name: (x_px, y_px, confidence)}  using NintAi key names
+    {name: (x_px, y_px, confidence)}  using OpenVelo key names
     (left_/right_ + shoulder, elbow, wrist, hip, knee, ankle, heel, toe, ear, eye; nose)
 
 Backends
@@ -22,7 +22,7 @@ MP_MODEL = os.path.join(ROOT, 'src', 'models', 'pose_landmarker_heavy.task')
 BACKENDS = {
     'mediapipe': {
         'name': 'MediaPipe Pose Heavy',
-        'desc': 'Google BlazePose GHUM, 33 keypoints incl. heel/toe. Bundled — works offline.',
+        'desc': 'Google BlazePose GHUM, 33 keypoints incl. heel/toe. Bundled, so it works offline.',
         'speed': 'Fast',
     },
     'rtmpose': {
@@ -91,7 +91,9 @@ class MediaPipeBackend:
             return {}
         h, w = frame_bgr.shape[:2]
         lms = res.pose_landmarks[0]
-        return {name: (lms[i].x * w, lms[i].y * h, float(lms[i].visibility))
+        # 4th value: relative depth (smaller = closer to camera), used to tell
+        # the near leg from the far leg.
+        return {name: (lms[i].x * w, lms[i].y * h, float(lms[i].visibility or 0.0), float(lms[i].z))
                 for i, name in MP_MAP.items() if i < len(lms)}
 
     def close(self):

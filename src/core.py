@@ -1,33 +1,6 @@
+"""Geometric primitives for single-frame (photo) analysis."""
 import numpy as np
-import cv2
-import math
 
-class OneEuroFilter:
-    def __init__(self, t0, x0, min_cutoff=1.0, beta=0.007, d_cutoff=1.0):
-        self.t_prev = t0
-        self.x_prev = np.array(x0, dtype=float)
-        self.dx_prev = np.zeros_like(x0, dtype=float)
-        self.min_cutoff = min_cutoff
-        self.beta = beta
-        self.d_cutoff = d_cutoff
-        self.alpha = self._alpha(min_cutoff)
-
-    def _alpha(self, cutoff):
-        tau = 1.0 / (2 * np.pi * cutoff)
-        return 1.0 / (1.0 + tau * 30.0)
-
-    def __call__(self, t, x):
-        t_e = t - self.t_prev
-        a_d = self._alpha(self.d_cutoff)
-        dx = (x - self.x_prev) / t_e if t_e > 0 else np.zeros_like(x)
-        dx_hat = a_d * dx + (1 - a_d) * self.dx_prev
-        cutoff = self.min_cutoff + self.beta * np.abs(dx_hat)
-        a = self._alpha(cutoff)
-        x_hat = a * x + (1 - a) * self.x_prev
-        self.x_prev = x_hat
-        self.dx_prev = dx_hat
-        self.t_prev = t
-        return x_hat
 
 def calculate_angle(a, b, c):
     a, b, c = np.array(a), np.array(b), np.array(c)
@@ -46,43 +19,6 @@ def calculate_angle_horizontal(a, b):
     ang = np.abs(np.degrees(np.arctan2(v[1], v[0])))
     return float(min(ang, 180.0 - ang))
 
-
-class LazyOneEuroFilter:
-    """OneEuroFilter that initialises on the first sample instead of (0, 0).
-
-    The original filter started from the origin, which dragged the first
-    ~second of landmarks towards the top-left corner of the frame.
-    """
-
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-        self.f = None
-
-    def __call__(self, t, x):
-        x = np.asarray(x, dtype=float)
-        if self.f is None:
-            self.f = OneEuroFilter(t0=t, x0=x, **self.kwargs)
-            return x
-        return self.f(t, x)
-
-def draw_angle_arc(image, p1, p2, p3, angle, color=(0, 255, 255), radius=30):
-    if p1 == (0,0) or p2 == (0,0) or p3 == (0,0): return
-    v1 = np.array(p1) - np.array(p2)
-    v2 = np.array(p3) - np.array(p2)
-    ang1 = np.degrees(np.arctan2(v1[1], v1[0]))
-    ang2 = np.degrees(np.arctan2(v2[1], v2[0]))
-    if ang1 < 0: ang1 += 360
-    if ang2 < 0: ang2 += 360
-    diff = ang2 - ang1
-    if diff < 0: diff += 360
-    if diff > 180:
-        start, end = ang2, ang1
-    else:
-        start, end = ang1, ang2
-    cv2.ellipse(image, p2, (radius, radius), 0, start, end, color, 2, cv2.LINE_AA)
-    text_x = int(p2[0] + radius * 1.5 * np.cos(np.radians((start+end)/2)))
-    text_y = int(p2[1] + radius * 1.5 * np.sin(np.radians((start+end)/2)))
-    cv2.putText(image, f"{int(angle)}", (text_x-10, text_y+5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
 def detect_side(lm_dict):
     nose = lm_dict.get('nose')
@@ -172,10 +108,3 @@ def analyze_posture(lm):
     else: angles['foot_angle'] = 0
 
     return angles
-
-def get_feedback(knee_angle, arm_avg):
-    feedback_lines = []
-    if knee_angle > 0:
-        if knee_angle < 140: feedback_lines.append(f"Knee Extension low ({knee_angle:.0f}°). Raise Saddle.")
-        elif knee_angle > 150: feedback_lines.append(f"Knee Extension high ({knee_angle:.0f}°). Lower Saddle.")
-    return feedback_lines, {}, {}
