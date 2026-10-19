@@ -1,11 +1,20 @@
-opencv-python
-mediapipe
-numpy
-pandas
-openpyxl
-ultralytics
-fpdf
-seaborn
-matplotlib
-google-generativeai
-python-dotenv
+# Pose estimation & video
+mediapipe>=0.10.14
+opencv-python-headless>=4.10.0
+
+# Kinematics
+numpy>=1.26.0
+scipy>=1.13.0
+
+# Web studio
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# PDF reports
+fpdf2>=2.8.0
+
+# Optional second pose engine (RTMPose · Halpe-26). Remove these two lines
+# for a lighter install; the studio falls back to MediaPipe automatically.
+rtmlib>=0.0.15
+onnxruntime>=1.19.0

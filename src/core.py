@@ -1,33 +1,6 @@
+"""Geometric primitives for single-frame (photo) analysis."""
 import numpy as np
-import cv2
-import math
 
-class OneEuroFilter:
-    def __init__(self, t0, x0, min_cutoff=1.0, beta=0.007, d_cutoff=1.0):
-        self.t_prev = t0
-        self.x_prev = np.array(x0, dtype=float)
-        self.dx_prev = np.zeros_like(x0, dtype=float)
-        self.min_cutoff = min_cutoff
-        self.beta = beta
-        self.d_cutoff = d_cutoff
-        self.alpha = self._alpha(min_cutoff)
-
-    def _alpha(self, cutoff):
-        tau = 1.0 / (2 * np.pi * cutoff)
-        return 1.0 / (1.0 + tau * 30.0)
-
-    def __call__(self, t, x):
-        t_e = t - self.t_prev
-        a_d = self._alpha(self.d_cutoff)
-        dx = (x - self.x_prev) / t_e if t_e > 0 else np.zeros_like(x)
-        dx_hat = a_d * dx + (1 - a_d) * self.dx_prev
-        cutoff = self.min_cutoff + self.beta * np.abs(dx_hat)
-        a = self._alpha(cutoff)
-        x_hat = a * x + (1 - a) * self.x_prev
-        self.x_prev = x_hat
-        self.dx_prev = dx_hat
-        self.t_prev = t
-        return x_hat
 
 def calculate_angle(a, b, c):
     a, b, c = np.array(a), np.array(b), np.array(c)
@@ -37,27 +10,15 @@ def calculate_angle(a, b, c):
     return angle
 
 def calculate_angle_horizontal(a, b):
-    v = np.array(b) - np.array(a)
-    return np.abs(np.degrees(np.arctan2(v[1], v[0])))
+    """Acute angle (0-90 deg) between segment a->b and the horizontal.
 
-def draw_angle_arc(image, p1, p2, p3, angle, color=(0, 255, 255), radius=30):
-    if p1 == (0,0) or p2 == (0,0) or p3 == (0,0): return
-    v1 = np.array(p1) - np.array(p2)
-    v2 = np.array(p3) - np.array(p2)
-    ang1 = np.degrees(np.arctan2(v1[1], v1[0]))
-    ang2 = np.degrees(np.arctan2(v2[1], v2[0]))
-    if ang1 < 0: ang1 += 360
-    if ang2 < 0: ang2 += 360
-    diff = ang2 - ang1
-    if diff < 0: diff += 360
-    if diff > 180:
-        start, end = ang2, ang1
-    else:
-        start, end = ang1, ang2
-    cv2.ellipse(image, p2, (radius, radius), 0, start, end, color, 2, cv2.LINE_AA)
-    text_x = int(p2[0] + radius * 1.5 * np.cos(np.radians((start+end)/2)))
-    text_y = int(p2[1] + radius * 1.5 * np.sin(np.radians((start+end)/2)))
-    cv2.putText(image, f"{int(angle)}", (text_x-10, text_y+5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+    Folding into 0-90 makes the metric independent of which way the rider faces
+    (a left-facing rider would otherwise report ~140 deg instead of ~40 deg).
+    """
+    v = np.array(b, dtype=float) - np.array(a, dtype=float)
+    ang = np.abs(np.degrees(np.arctan2(v[1], v[0])))
+    return float(min(ang, 180.0 - ang))
+
 
 def detect_side(lm_dict):
     nose = lm_dict.get('nose')
@@ -86,7 +47,14 @@ def get_primary_landmarks(lm_dict, facing_side):
     l_count = sum(1 for k in left_keys if k in lm_dict)
     r_count = sum(1 for k in right_keys if k in lm_dict)
     
-    prefix = 'left_' if l_count >= r_count else 'right_'
+    # A rider facing image-left shows their LEFT side to the camera (and vice
+    # versa), so prefer the facing side whenever enough of it is visible.
+    if facing_side == 'left' and l_count >= 4:
+        prefix = 'left_'
+    elif facing_side == 'right' and r_count >= 4:
+        prefix = 'right_'
+    else:
+        prefix = 'left_' if l_count >= r_count else 'right_'
     
     unified = {}
     for k, v in lm_dict.items():
@@ -115,6 +83,10 @@ def analyze_posture(lm):
     if valid(lm.get('elbow')) and valid(lm.get('shoulder')) and valid(lm.get('hip')):
         angles['arm_torso'] = calculate_angle(lm['elbow'], lm['shoulder'], lm['hip'])
     else: angles['arm_torso'] = 0
+
+    if valid(lm.get('shoulder')) and valid(lm.get('elbow')) and valid(lm.get('wrist')):
+        angles['elbow'] = calculate_angle(lm['shoulder'], lm['elbow'], lm['wrist'])
+    else: angles['elbow'] = 0
     
     ear_pt = None
     if 'ear' in lm: ear_pt = lm['ear']
@@ -136,10 +108,3 @@ def analyze_posture(lm):
     else: angles['foot_angle'] = 0
 
     return angles
-
-def get_feedback(knee_angle, arm_avg):
-    feedback_lines = []
-    if knee_angle > 0:
-        if knee_angle < 140: feedback_lines.append(f"Knee Extension low ({knee_angle:.0f}°). Raise Saddle.")
-        elif knee_angle > 150: feedback_lines.append(f"Knee Extension high ({knee_angle:.0f}°). Lower Saddle.")
-    return feedback_lines, {}, {}
