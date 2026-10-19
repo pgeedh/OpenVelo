@@ -7,9 +7,17 @@
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-Pose%20Heavy-orange)
 ![RTMPose](https://img.shields.io/badge/RTMPose-Halpe--26-purple)
 
-**OpenVelo** (formerly NintAi) turns a 30-second phone video of you pedalling into a professional bike fit. It tracks your joints, models every pedal stroke, and gives you measured angles with confidence ranges plus a ranked plan of what to adjust: saddle, reach and bars. It runs entirely on your computer, with no AI service or account.
+**OpenVelo** turns a 30-second phone video of you pedalling into a professional bike fit. It tracks your joints, models every pedal stroke, and gives you measured angles with confidence ranges plus a ranked plan of what to adjust: saddle, reach and bars. It runs entirely on your computer, with no AI service or account.
 
 ![OpenVelo home page](assets/screenshots/home.png)
+
+## Why OpenVelo exists
+
+A professional bike fit at a local shop can cost hundreds, and app-based fitting services like MyVeloFit add up too. That puts a good position out of reach for a lot of riders, even though the core of a fit is measuring a handful of joint angles while you pedal.
+
+I built OpenVelo to do that with plain computer vision on your own computer, for free. Use it as a baseline at home: measure your position, make one small change (saddle height, setback, stem), film again, and check the numbers moved the right way. You can make fast changes yourself and still be confident your fit is in a good range, and save a paid fitter for injuries or a new bike.
+
+OpenVelo is an independent open-source project and is not affiliated with MyVeloFit or any bike-fitting company.
 
 | Guided onboarding | Fit report |
 | :---: | :---: |
@@ -30,8 +38,8 @@
 ### 1. Create a conda environment and install the requirements
 
 ```bash
-git clone -b feat/upgradeapp https://github.com/pgeedh/NintAi-The-AI-Powered-Bike-Fit-Studio.git
-cd NintAi-The-AI-Powered-Bike-Fit-Studio
+git clone https://github.com/pgeedh/OpenVelo.git
+cd OpenVelo
 
 conda create -n openvelo python=3.11 -y
 conda activate openvelo
@@ -238,12 +246,6 @@ tests/                      Unit tests for the maths, scoring and reports
 ```
 
 Saved fits live in `output/sessions/` (git-ignored).
-
-## Brand
-
-The logo is a single-stroke bicycle in signal yellow `#E2E32C` on ink `#171706`. The SVG mark lives in [`src/web/static/favicon.svg`](src/web/static/favicon.svg) and as the `logo-bike` symbol in `index.html`; an animated stroke version (`js/logo.js`) draws itself in on launch and "rides" during loading.
-
-OpenVelo is an independent open-source project and is not affiliated with MyVeloFit or Retül.
 
 ## License
 
