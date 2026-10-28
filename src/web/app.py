@@ -25,7 +25,7 @@ from pydantic import BaseModel
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src import coach, engine, fit_profiles as fp, pose_backends as pb, report  # noqa: E402
 
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
 SAMPLES_DIR = os.path.join(ROOT, 'assets', 'examples')
