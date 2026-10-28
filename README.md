@@ -7,7 +7,7 @@
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-Pose%20Heavy-orange)
 ![RTMPose](https://img.shields.io/badge/RTMPose-Halpe--26-purple)
 
-**OpenVelo** (formerly NintAi) turns a 30-second phone video of you pedalling into a professional bike fit. It tracks your joints, models every pedal stroke, and gives you measured angles with confidence ranges plus a ranked plan of what to adjust: saddle, reach and bars. It runs entirely on your computer, with no AI service or account.
+**OpenVelo** (formerly NintAi) turns a 30-second phone video of you pedalling into a professional bike fit. It tracks your joints, models every pedal stroke, reads the shape of your back, and gives you measured angles with confidence ranges plus a ranked plan of what to adjust: saddle, reach and bars. It runs entirely on your computer, with no AI service or account.
 
 ![OpenVelo home page](assets/screenshots/home.png)
 
@@ -17,10 +17,13 @@
 
 ## What you get
 
+- **New in 3.0: back roundness and posture correctness.** OpenVelo traces your back from hips to shoulders in every frame and tells you whether you ride with a neutral or rounded back, stroke by stroke. A posture checklist combines back shape with torso, shoulder, elbow and pelvis stability, so you can ride longer and more comfortably. See [Back & posture](#back--posture).
+
 - **Chat-style onboarding.** A fit assistant asks six quick questions (riding style, height, flexibility, discomfort, cranks). Answer in your own words ("5'10\"", "Ironman training", "my knees ache at the front") or tap a suggestion; it all runs offline, with no AI service. Then a camera-setup guide, and either an upload or an in-browser recording with a **live framing check** that confirms you're side-on, in frame and pedalling.
 - **Measured angles with confidence.** Knee extension and bend, hip, torso, shoulder and elbow, each reported with a 95% range.
 - **A ranked adjustment plan.** Saddle height is given in millimetres when your height is known. A **saddle-height simulator** lets you preview the effect of each change.
-- **Interactive report.** Your video plays with the skeleton, joint angles and crank drawn on top. A pedal-stroke chart is synced to playback.
+- **Interactive report.** Your video plays with the skeleton, joint angles, crank, a tracked pedal box and your back contour (green, amber or red by roundness) drawn on top. The pedal-stroke chart and the posture charts are synced to playback.
+- **Back & posture charts.** Hip and shoulder vertical displacement, a back roundness map, the average back shape of every pedal stroke, and stroke timing (average, fastest, slowest). Click a chart to jump the video there. All of it is in the PDF too.
 - **History and comparison.** Every fit is saved, so you can compare before and after each adjustment. Export any fit as a PDF.
 - **Polished, accessible UI.** Light and dark themes, [Phosphor](https://phosphoricons.com) icons (the free icon set built into Framer), an animated logo for loading states, keyboard shortcuts, and a layout that works down to phone width.
 - **Private and offline.** No account, no API key and no cloud service. Video and results stay on your computer.
@@ -30,8 +33,8 @@
 ### 1. Create a conda environment and install the requirements
 
 ```bash
-git clone -b feat/upgradeapp https://github.com/pgeedh/NintAi-The-AI-Powered-Bike-Fit-Studio.git
-cd NintAi-The-AI-Powered-Bike-Fit-Studio
+git clone -b release/v3.0 https://github.com/pgeedh/OpenVelo.git
+cd OpenVelo
 
 conda create -n openvelo python=3.11 -y
 conda activate openvelo
@@ -193,6 +196,32 @@ Each fit is graded Good, Fair or Poor from:
 
 Poor captures get specific advice on how to re-film.
 
+## Back & posture
+
+![Back & posture card](assets/screenshots/posture.png)
+
+| Back contour on the video | Posture panel in the PDF report |
+| :---: | :---: |
+| ![Back contour overlay](assets/screenshots/back-contour.jpg) | ![Posture panel](assets/screenshots/posture-panel.jpg) |
+
+Pose models give only two points on the trunk (shoulder and hip), so they can't see a hunched back. OpenVelo reads it from your silhouette instead (implemented in [`src/posture.py`](src/posture.py)):
+
+1. **Silhouette.** MediaPipe's person segmentation mask comes with every frame.
+2. **Back contour.** The hip → shoulder line is split into 15 stations (18–94% of its length, which skips the glutes and the neck). From each station OpenVelo steps along the normal pointing out of your back until it leaves the silhouette. That edge point is the back contour.
+3. **Roundness.** Each contour point's signed distance from the straight line joining the contour's ends, as a percentage of back length (+ = bulging out). The **roundness index** is the peak of that curve. A 5-frame moving median removes mask flicker.
+4. **Verdict.** Under 4% is a **neutral back**, 4–6.5% **slight rounding**, and 6.5% or more a **rounded back**. These bands were calibrated on the bundled clips: an upright, flat back reads about 2%, and visibly hunched road and TT positions read 7–10%.
+5. **Per stroke.** Using the crank-angle strokes from the kinematics model, each stroke gets its median roundness, its average back shape and its duration. Strokes cut off by the clip's start or end are left out of the timing stats.
+
+The report then shows:
+
+- **Vertical displacement.** Hip and shoulder rise over time (mm when a scale is known), which shows bouncing and rocking.
+- **Back roundness map.** Time across, position along the back (hips → shoulders) up. Amber and red mark where and when the back rounds; teal marks arching.
+- **Average back shape.** One curve per pedal stroke, coloured by verdict, so a back that tires and rounds late in the clip stands out.
+- **Posture checklist and score.** Back shape (double weight), torso angle, shoulder angle, elbow bend and pelvis stability (hip rock ≤ 10 mm), each graded In range, Close or Adjust.
+- **Plan items.** A rounded back adds an adjustment to the plan. If the reach is also short, that's a sign you're cramped and folding, so it suggests a longer stem. Otherwise it suggests a shorter reach or higher bars.
+
+Back roundness needs the MediaPipe engine (RTMPose has no segmentation). Baggy clothing can add a little curve, so ride in a fitted jersey.
+
 ## Riding-style target ranges
 
 | Metric | Endurance road | Race road | Triathlon / TT | Gravel / MTB |
@@ -225,6 +254,7 @@ python -m pytest -q               # run the test suite
 app.py                      Launches the studio (FastAPI + Uvicorn)
 src/
   kinematics.py             Leg tracking, crank angle, Fourier models, bootstrap CIs
+  posture.py                Back contour from the silhouette, roundness, posture checks
   engine.py                 Video/photo analysis pipeline and scoring
   pose_backends.py          MediaPipe and RTMPose adapters
   fit_profiles.py           Target ranges, personalisation, recommendations
