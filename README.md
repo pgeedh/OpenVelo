@@ -11,6 +11,14 @@
 
 ![OpenVelo home page](assets/screenshots/home.png)
 
+## Why OpenVelo exists
+
+A professional bike fit at a local shop can cost hundreds, and app-based fitting services like MyVeloFit add up too. That puts a good position out of reach for a lot of riders, even though the core of a fit is measuring a handful of joint angles while you pedal.
+
+I built OpenVelo to do that with plain computer vision on your own computer, for free. Use it as a baseline at home: measure your position, make one small change (saddle height, setback, stem), film again, and check the numbers moved the right way. You can make fast changes yourself and still be confident your fit is in a good range, and save a paid fitter for injuries or a new bike.
+
+OpenVelo is an independent open-source project and is not affiliated with MyVeloFit or any bike-fitting company.
+
 | Guided onboarding | Fit report |
 | :---: | :---: |
 | ![Onboarding wizard](assets/screenshots/onboarding.png) | ![Fit report](assets/screenshots/report.png) |
@@ -34,7 +42,7 @@
 ### 1. Create a conda environment and install the requirements
 
 ```bash
-git clone -b release/v3.0 https://github.com/pgeedh/OpenVelo.git
+git clone https://github.com/pgeedh/OpenVelo.git
 cd OpenVelo
 
 conda create -n openvelo python=3.11 -y
@@ -277,12 +285,6 @@ tests/                      Unit tests for the maths, scoring and reports
 ```
 
 Saved fits live in `output/sessions/` (git-ignored).
-
-## Brand
-
-The logo is a single-stroke bicycle in signal yellow `#E2E32C` on ink `#171706`. The SVG mark lives in [`src/web/static/favicon.svg`](src/web/static/favicon.svg) and as the `logo-bike` symbol in `index.html`; an animated stroke version (`js/logo.js`) draws itself in on launch and "rides" during loading.
-
-OpenVelo is an independent open-source project and is not affiliated with MyVeloFit or Retül.
 
 ## License
 
