@@ -66,15 +66,16 @@ def draw_overlay(img, lm, angles=None, statuses=None, title=None, back=None):
     """Draw skeleton, foot polygon, back contour and joint angle labels onto img (in place)."""
     angles = angles or {}
     statuses = statuses or {}
-    scale = max(0.5, min(1.4, img.shape[1] / 1100.0))
+    # Size from the longer side so portrait phone clips get legible labels
+    scale = max(0.5, min(1.4, max(img.shape[:2]) / 1100.0))
     thick = max(2, int(3 * scale))
 
     if back is not None:
         contour, index = back
         col = STATUS_BGR.get(posture.VERDICTS[posture.verdict_for(index) or 'neutral'][0], C_OK)
         pts = np.round(contour[np.isfinite(contour[:, 0])]).astype(np.int32)
-        cv2.polylines(img, [pts], False, (16, 13, 12), thick + 3, cv2.LINE_AA)
-        cv2.polylines(img, [pts], False, col, thick + 1, cv2.LINE_AA)
+        cv2.polylines(img, [pts], False, (16, 13, 12), 2 * thick + 4, cv2.LINE_AA)
+        cv2.polylines(img, [pts], False, col, 2 * thick, cv2.LINE_AA)
 
     if all(k in lm for k in ('ankle', 'heel', 'toe')):
         pts = np.array([_pt(lm['ankle']), _pt(lm['heel']), _pt(lm['toe'])], np.int32)

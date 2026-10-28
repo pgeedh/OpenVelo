@@ -124,7 +124,7 @@ function startHero(demo) {
     const pose = poseAt(track, t);
     const trail = [];
     for (let k = Math.max(0, pose.index - 18); k <= pose.index; k++) if (ball[k]) trail.push(ball[k]);
-    drawPose(ctx, pose, rect, { crank: track.crank, trail });
+    drawPose(ctx, pose, rect, { crank: track.crank, trail, backStatus: backStatus(pose.backIndex, track.back_thresholds) });
     $("#hero-knee").textContent = deg(pose.angles.knee, 0);
     $("#hero-hip").textContent = deg(pose.angles.hip, 0);
     $("#hero-crank").textContent = pose.theta == null ? "–" : `${Math.round(pose.theta)}°`;
