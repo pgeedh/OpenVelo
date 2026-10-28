@@ -13,6 +13,7 @@ from src import fit_profiles as fp
 from src import pose_backends as pb
 from src import report
 from src import coach
+from src import posture
 
 
 def test_calculate_angle():
@@ -140,3 +141,36 @@ def test_pdf_generation_bytes():
     assert isinstance(pdf_bytes, bytes)
     assert len(pdf_bytes) > 1000
     assert pdf_bytes.startswith(b'%PDF')
+
+
+def _torso_mask(bulge_px):
+    """Side-on torso (rider facing right): hip at (100, 300), shoulder at (400, 200)."""
+    import cv2
+    m = np.zeros((500, 600), np.float32)
+    hip, sh = np.array([100., 300.]), np.array([400., 200.])
+    n, L = posture.dorsal_normal(hip, sh, 'right')
+    s = np.linspace(0, 1, 50)[:, None]
+    back = hip + s * (sh - hip) + n * (40 + bulge_px * np.sin(np.pi * s))
+    chest = hip + s * (sh - hip) - n * 40
+    cv2.fillPoly(m, [np.vstack([back, chest[::-1]]).astype(np.int32)], 1.0)
+    return m, hip, sh
+
+
+def test_back_roundness_flat_vs_rounded():
+    flat = posture.back_profile(*_torso_mask(0), 'right')
+    hunched = posture.back_profile(*_torso_mask(30), 'right')
+    assert flat is not None and hunched is not None
+    assert posture.roundness_index(flat[1]) < posture.NEUTRAL_MAX
+    assert posture.roundness_index(hunched[1]) >= posture.ROUNDED_MIN
+    assert posture.verdict_for(posture.roundness_index(hunched[1])) == 'rounded'
+
+
+def test_posture_summary_strokes_and_timing():
+    mask, hip, sh = _torso_mask(30)
+    prof = posture.back_profile(mask, hip, sh, 'right')
+    times = np.arange(90) / 30.0
+    stroke_id = np.repeat([0, 1, 2], 30)
+    post = posture.summarize([prof] * 90, times, stroke_id, fps=30.0)
+    assert post['verdict'] == 'rounded' and len(post['strokes']) == 3
+    assert post['timing']['avg'] == 1.0
+    assert posture.back_recommendation(post)['metric'] == 'back'

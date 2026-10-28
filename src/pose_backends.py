@@ -79,7 +79,9 @@ class MediaPipeBackend:
             base_options=python.BaseOptions(model_asset_path=MP_MODEL),
             running_mode=vision.RunningMode.IMAGE if mode == 'image' else vision.RunningMode.VIDEO,
             num_poses=1, min_pose_detection_confidence=0.5,
-            min_pose_presence_confidence=0.5, min_tracking_confidence=0.5)
+            min_pose_presence_confidence=0.5, min_tracking_confidence=0.5,
+            output_segmentation_masks=True)
+        self.last_mask = None
         self.landmarker = vision.PoseLandmarker.create_from_options(opts)
 
     def process(self, frame_bgr, ts_ms=0):
@@ -87,6 +89,8 @@ class MediaPipeBackend:
         img = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=rgb)
         res = self.landmarker.detect(img) if self.mode == 'image' else \
             self.landmarker.detect_for_video(img, int(ts_ms))
+        # Person silhouette (0-1 float, frame size); posture.py reads the back from it
+        self.last_mask = res.segmentation_masks[0].numpy_view().squeeze() if res.segmentation_masks else None
         if not res.pose_landmarks:
             return {}
         h, w = frame_bgr.shape[:2]
@@ -108,6 +112,7 @@ class RTMPoseBackend:
         from rtmlib import BodyWithFeet, PoseTracker
         from functools import partial
         model_mode = 'performance' if size == 'x' else 'balanced'
+        self.last_mask = None  # no segmentation: back roundness is unavailable
         solution = partial(BodyWithFeet, mode=model_mode)
         if mode == 'image':
             self.model = BodyWithFeet(mode=model_mode, backend='onnxruntime', device='cpu')
