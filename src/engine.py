@@ -16,6 +16,7 @@ from src import core  # noqa: E402
 from src import fit_profiles as fp  # noqa: E402
 from src import pose_backends as pb  # noqa: E402
 from src import kinematics as kin  # noqa: E402
+from src import posture  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -56,12 +57,25 @@ def _label(img, text, org, color, scale=0.6):
     cv2.putText(img, text, (x, y), font, scale, color, th, cv2.LINE_AA)
 
 
-def draw_overlay(img, lm, angles=None, statuses=None, title=None):
-    """Draw skeleton, foot polygon and joint angle labels onto img (in place)."""
+def posture_panel(res):
+    """Back & posture chart panel (BGR image) for the key frames and PDF."""
+    return posture.render_panel(res['posture'])
+
+
+def draw_overlay(img, lm, angles=None, statuses=None, title=None, back=None):
+    """Draw skeleton, foot polygon, back contour and joint angle labels onto img (in place)."""
     angles = angles or {}
     statuses = statuses or {}
-    scale = max(0.5, min(1.4, img.shape[1] / 1100.0))
+    # Size from the longer side so portrait phone clips get legible labels
+    scale = max(0.5, min(1.4, max(img.shape[:2]) / 1100.0))
     thick = max(2, int(3 * scale))
+
+    if back is not None:
+        contour, index = back
+        col = STATUS_BGR.get(posture.VERDICTS[posture.verdict_for(index) or 'neutral'][0], C_OK)
+        pts = np.round(contour[np.isfinite(contour[:, 0])]).astype(np.int32)
+        cv2.polylines(img, [pts], False, (16, 13, 12), 2 * thick + 4, cv2.LINE_AA)
+        cv2.polylines(img, [pts], False, col, 2 * thick, cv2.LINE_AA)
 
     if all(k in lm for k in ('ankle', 'heel', 'toe')):
         pts = np.array([_pt(lm['ankle']), _pt(lm['heel']), _pt(lm['toe'])], np.int32)
@@ -146,11 +160,17 @@ def score_result(res, profile_key, flexibility='average', pains=()):
                                           bio.get('mm_per_px'))
     bio['saddle_adj_mm'] = saddle
     res['biomech'] = bio
-    res['recommendations'] = fp.build_recommendations(
+    recs = fp.build_recommendations(
         metrics, profile_key,
         {'torso_range': (res.get('extra') or {}).get('torso_range'), 'mode': res.get('mode'),
          'saddle_adj_mm': saddle, 'hip_rock_mm': bio.get('hip_rock_mm'), 'pains': pains},
         ranges=ranges)
+    back = posture.back_recommendation(res.get('posture'), metrics, ranges)
+    if back:
+        recs.append(back)
+        recs.sort(key=lambda r: r['priority'])
+    res['recommendations'] = recs
+    res['posture_check'] = posture.posture_checks(res)
     return res
 
 
@@ -193,7 +213,7 @@ def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
         backend = 'mediapipe'
         detector = pb.make_backend(backend, mode='video')
 
-    raw_frames, times, src_indices = [], [], []
+    raw_frames, times, src_indices, back_profiles = [], [], [], []
     side_votes = {'left': 0, 'right': 0}
     processed = detected = 0
     frame_size = None
@@ -219,9 +239,13 @@ def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
         frame_size = frame.shape[1], frame.shape[0]
         processed += 1
         raw = detector.process(frame, ts_ms=int(t * 1000))
+        prof = None
         if raw:
             detected += 1
-            side_votes[core.detect_side({k: v[:2] for k, v in raw.items()})] += 1
+            f_side = core.detect_side({k: v[:2] for k, v in raw.items()})
+            side_votes[f_side] += 1
+            prof = _back_profile(getattr(detector, 'last_mask', None), raw, f_side)
+        back_profiles.append(prof)
         raw_frames.append(raw or {})
         times.append(t)
         src_indices.append(src_idx)
@@ -312,7 +336,7 @@ def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
                        'tdc': (int(np.nanargmin(knee)), "Knee bend (top of stroke)")}
 
     report(0.94, "Rendering key frames", 'report')
-    snapshots = _grab_snapshots(path, src_indices, tracks, ang, snap_frames, max_width)
+    snapshots = _grab_snapshots(path, src_indices, tracks, ang, snap_frames, max_width, back_profiles)
 
     # Compact per-frame track for the client-side overlay (normalised 0-1)
     fw, fh = frame_size
@@ -334,6 +358,20 @@ def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
         'crank': ({'cx': crank['cx'] / fw, 'cy': crank['cy'] / fh, 'r': crank['r'] / fw} if crank else None),
         'facing': der.get('facing', facing),
     }
+
+    # Back roundness from the silhouette (MediaPipe only)
+    post = posture.summarize(back_profiles, times, kin_res.get('stroke_id'), tracks,
+                             der.get('mm_per_px'), kin_res['fps'])
+    if post:
+        idx = post.pop('frame_index')
+        keep = np.arange(0, len(posture.STATIONS), 2)
+        track['back'] = [None if p is None else [[round(q[0] / fw, 4), round(q[1] / fh, 4)] for q in p[0][keep]]
+                         for p in back_profiles]
+        track['back_index'] = idx
+        track['back_thresholds'] = post['thresholds']
+    elif backend != 'mediapipe':
+        warnings.append("Back roundness needs the MediaPipe engine (it reads the rider's silhouette). "
+                        "Re-run with MediaPipe to see the back and posture analysis.")
 
     # Stroke samples for the chart (decimated scatter + fitted curves)
     stroke = None
@@ -393,10 +431,27 @@ def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
             'side': kin_res.get('near_side', facing), 'torso_range': torso_range, 'knee_range': knee_range,
         },
         'rider': {'crank_mm': crank_mm, 'height_cm': rider_height_cm},
+        'posture': post,
     }
+    report(0.97, "Reading back shape", 'report')
+    if post:
+        res['snapshots']['posture'] = {'title': 'Back & posture analysis', 'angles': {},
+                                       'jpg': _to_jpeg(posture_panel(res), width=1400, quality=88)}
     score_result(res, profile_key, flexibility, pains)
     report(1.0, "Done", 'report')
     return res
+
+
+def _back_profile(mask, raw, facing):
+    """Back contour for one frame from the mid-line of both shoulders and hips."""
+    if mask is None:
+        return None
+
+    def mid(name):
+        pts = [raw[f'{s}_{name}'][:2] for s in ('left', 'right')
+               if f'{s}_{name}' in raw and raw[f'{s}_{name}'][2] >= kin.CONF_MIN * 0.5]
+        return np.mean(pts, axis=0) if pts else None
+    return posture.back_profile(mask, mid('hip'), mid('shoulder'), facing)
 
 
 def _quality_grade(det_rate, duration, side_ratio, knee_sd, method):
@@ -426,7 +481,7 @@ def _shoulder_overlap(raw_frames):
     return float(np.median(vals)) if vals else None
 
 
-def _grab_snapshots(path, src_indices, tracks, ang, key, max_width):
+def _grab_snapshots(path, src_indices, tracks, ang, key, max_width, back_profiles=None):
     """Annotated JPEG key frames drawn from the smoothed, identity-corrected tracks."""
     cap = cv2.VideoCapture(path)
     out = {}
@@ -440,7 +495,9 @@ def _grab_snapshots(path, src_indices, tracks, ang, key, max_width):
         angles = {'knee': ang['knee'][n], 'hip': ang['hip'][n], 'elbow': ang['elbow'][n],
                   'arm_torso': ang['shoulder'][n]}
         angles = {k: float(v) for k, v in angles.items() if np.isfinite(v)}
-        draw_overlay(img, lm, angles)
+        prof = back_profiles[n] if back_profiles else None
+        back = (prof[0], posture.roundness_index(prof[1])) if prof is not None else None
+        draw_overlay(img, lm, angles, back=back)
         out[name] = {'title': title, 'jpg': _to_jpeg(img, width=1100, quality=88), 'angles': angles}
     cap.release()
     return out

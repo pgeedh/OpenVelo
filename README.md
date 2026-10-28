@@ -7,7 +7,7 @@
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-Pose%20Heavy-orange)
 ![RTMPose](https://img.shields.io/badge/RTMPose-Halpe--26-purple)
 
-**OpenVelo** turns a 30-second phone video of you pedalling into a professional bike fit. It tracks your joints, models every pedal stroke, and gives you measured angles with confidence ranges plus a ranked plan of what to adjust: saddle, reach and bars. It runs entirely on your computer, with no AI service or account.
+**OpenVelo** is a studio-grade bike fit from a short phone video: no fitter, no appointment, no subscription. It tracks your joints, models every pedal stroke and reads the shape of your back, then turns it into measured angles with confidence ranges and a ranked plan of what to change: saddle, reach and bars. Everything runs privately on your own computer, with no account and no cloud service.
 
 ![OpenVelo home page](assets/screenshots/home.png)
 
@@ -25,10 +25,14 @@ OpenVelo is an independent open-source project and is not affiliated with MyVelo
 
 ## What you get
 
+- **New in 3.0: back roundness and posture correctness.** OpenVelo traces your back from hips to shoulders in every frame and tells you whether you ride with a neutral or rounded back, stroke by stroke. A posture checklist combines back shape with torso, shoulder, elbow and pelvis stability, so you can ride longer and more comfortably. See [Back & posture](#back--posture).
+
 - **Chat-style onboarding.** A fit assistant asks six quick questions (riding style, height, flexibility, discomfort, cranks). Answer in your own words ("5'10\"", "Ironman training", "my knees ache at the front") or tap a suggestion; it all runs offline, with no AI service. Then a camera-setup guide, and either an upload or an in-browser recording with a **live framing check** that confirms you're side-on, in frame and pedalling.
 - **Measured angles with confidence.** Knee extension and bend, hip, torso, shoulder and elbow, each reported with a 95% range.
 - **A ranked adjustment plan.** Saddle height is given in millimetres when your height is known. A **saddle-height simulator** lets you preview the effect of each change.
-- **Interactive report.** Your video plays with the skeleton, joint angles and crank drawn on top. A pedal-stroke chart is synced to playback.
+- **Interactive report.** Your video plays with the skeleton, joint angles, crank, a tracked pedal box and your back contour (green, amber or red by roundness) drawn on top. The pedal-stroke chart and the posture charts are synced to playback.
+- **Back & posture charts.** Hip and shoulder vertical displacement, a back roundness map, the average back shape of every pedal stroke, and stroke timing (average, fastest, slowest). Click a chart to jump the video there. All of it is in the PDF too.
+- **Analysis video export.** One click on **Export video** renders a side-by-side MP4: your ride with skeleton, back contour and pedal box, next to a live panel that fills in as you pedal (displacement, roundness map, back shape per stroke, stroke timing and a per-stroke back verdict). Ready to share or send to a coach.
 - **History and comparison.** Every fit is saved, so you can compare before and after each adjustment. Export any fit as a PDF.
 - **Polished, accessible UI.** Light and dark themes, [Phosphor](https://phosphoricons.com) icons (the free icon set built into Framer), an animated logo for loading states, keyboard shortcuts, and a layout that works down to phone width.
 - **Private and offline.** No account, no API key and no cloud service. Video and results stay on your computer.
@@ -100,7 +104,7 @@ Each frame is processed by **MediaPipe Pose Landmarker Heavy** (33 landmarks inc
 For each limb group (knee, ankle, heel, toe; and elbow, wrist), every frame *t* has a hidden state *s<sub>t</sub>* ∈ {0 = labels as given, 1 = labels swapped}. The tracker finds the state sequence that minimises
 
 $$
-J = \sum_t \left[ \frac{\lVert A_t(s_t) - A_{t-1}(s_{t-1}) \rVert + \lVert B_t(s_t) - B_{t-1}(s_{t-1}) \rVert}{\bar L_{\text{thigh}}} + \lambda\, s_t \right]
+J = \sum_t \left[ \frac{\lVert A_t(s_t) - A_{t-1}(s_{t-1}) \rVert + \lVert B_t(s_t) - B_{t-1}(s_{t-1}) \rVert}{\bar L_{\text{thigh}}} + \lambda s_t \right]
 $$
 
 where *A* and *B* are the two limb tracks under each labelling, distances are mean joint displacements, $\bar L_{\text{thigh}}$ normalises for scale, and λ = 0.12 is a small prior that favours the model's own labels. A swap costs two jumps of roughly a crank diameter, so Viterbi repairs it. Normal pedalling motion between frames costs little. The near side is picked from MediaPipe depth (lower *z* is closer), or otherwise from the facing direction.
@@ -114,23 +118,23 @@ where *A* and *B* are the two limb tracks under each labelling, distances are me
 
 ### 4. Crank geometry and crank angle
 
-The pedal spindle is approximated by the ball of the foot, $\mathbf b = \mathbf{heel} + 0.72\,(\mathbf{toe} - \mathbf{heel})$, which traces the crank circle. The circle $(c_x, c_y, r)$ is fitted robustly:
+The pedal spindle is approximated by the ball of the foot, $\mathbf b = \mathbf{heel} + 0.72(\mathbf{toe} - \mathbf{heel})$, which traces the crank circle. The circle $(c_x, c_y, r)$ is fitted robustly:
 
 1. **Seed:** the better (lower median residual) of the algebraic Kåsa fit and a median seed. The median seed takes the coordinate-wise median as the centre and the median distance as the radius, and a full pedal circle can't be dragged by a few wild points.
-2. **Trim:** points with residual $\lvert d_i - r \rvert > 3\,\text{MAD}$ are dropped and the seed is re-fitted.
-3. **Refine:** Gauss–Newton on the geometric (orthogonal-distance) error with Huber weights, $w_i = \min\left(1, \frac{1.345\,s}{\lvert d_i - r\rvert}\right)$.
+2. **Trim:** points with residual $\lvert d_i - r \rvert > 3 \cdot \text{MAD}$ are dropped and the seed is re-fitted.
+3. **Refine:** Gauss–Newton on the geometric (orthogonal-distance) error with Huber weights, $w_i = \min\left(1, \frac{1.345 \cdot s}{\lvert d_i - r\rvert}\right)$.
 
 The crank angle of each frame is
 
 $$
-\theta = \mathrm{atan2}\big(f\,(b_x - c_x),\; -(b_y - c_y)\big) \bmod 360^\circ, \qquad f = \pm 1 \text{ for a rider facing right or left.}
+\theta = \mathrm{atan2}\big(f(b_x - c_x), -(b_y - c_y)\big) \bmod 360^\circ, \qquad f = \pm 1 \text{ for a rider facing right or left.}
 $$
 
 If the unwrapped θ runs backwards, the facing direction was misjudged and *f* is flipped. Cadence is nearly constant within a stroke, so the unwrapped θ is smoothed over ≈0.35 s to remove foot-keypoint jitter.
 
-A second phase estimate comes from the **Hilbert transform** of leg extension (hip–ankle distance): $\varphi = \arg \mathcal H\{d_{\text{hip–ankle}}\}$. It is anchored to true crank angle by the circular-mean offset $\Delta = \mathrm{atan2}\left(\overline{\sin(\theta-\varphi)}, \overline{\cos(\theta-\varphi)}\right)$. OpenVelo then keeps whichever phase explains the knee signal with less scatter (it must be at least 10% better to replace the circle phase). With no usable circle, the Hilbert phase is used alone, with its peak placed at 180°.
+A second phase estimate comes from the **Hilbert transform** of leg extension (hip–ankle distance): $\varphi = \arg \mathcal H \lbrace d_{\text{hip–ankle}} \rbrace$. It is anchored to true crank angle by the circular-mean offset $\Delta = \mathrm{atan2}\left(\overline{\sin(\theta-\varphi)}, \overline{\cos(\theta-\varphi)}\right)$. OpenVelo then keeps whichever phase explains the knee signal with less scatter (it must be at least 10% better to replace the circle phase). With no usable circle, the Hilbert phase is used alone, with its peak placed at 180°.
 
-**Strokes** are whole revolutions of the unwrapped θ. **Cadence** is the least-squares slope of unwrapped θ against time: $\text{rpm} = \frac{60}{360}\,\frac{d\theta}{dt}$.
+**Strokes** are whole revolutions of the unwrapped θ. **Cadence** is the least-squares slope of unwrapped θ against time: $\text{rpm} = \frac{60}{360} \cdot \frac{d\theta}{dt}$.
 
 ### 5. Joint angles (per frame, side view)
 
@@ -143,7 +147,7 @@ A second phase estimate comes from the **Hilbert transform** of leg extension (h
 | Elbow | $\angle(\text{shoulder}, \text{elbow}, \text{wrist})$ |
 | Ankle | $\angle(\text{knee}, \text{ankle}, \text{toe})$; ankling = its range over the stroke |
 
-Inner angles use $\theta_{ABC} = \arccos\frac{(\mathbf A-\mathbf B)\cdot(\mathbf C-\mathbf B)}{\lVert\mathbf A-\mathbf B\rVert\,\lVert\mathbf C-\mathbf B\rVert}$.
+Inner angles use $\theta_{ABC} = \arccos\frac{(\mathbf A-\mathbf B)\cdot(\mathbf C-\mathbf B)}{\lVert\mathbf A-\mathbf B\rVert \lVert\mathbf C-\mathbf B\rVert}$.
 
 ### 6. Crank-angle modelling (robust Fourier regression)
 
@@ -168,7 +172,7 @@ Whole strokes are resampled with replacement (B = 200), the model is re-fitted, 
 
 The scale (mm per pixel) comes from:
 
-- **Rider height** (preferred), using Winter's anthropometrics: thigh + shank ≈ 0.491·H, so $s = \dfrac{0.491\,H}{\bar L_{\text{thigh}} + \bar L_{\text{shank}}}$.
+- **Rider height** (preferred), using Winter's anthropometrics: thigh + shank ≈ 0.491·H, so $s = \dfrac{0.491 H}{\bar L_{\text{thigh}} + \bar L_{\text{shank}}}$.
 - **Crank circle**, $s = \text{crank length}/r$. This is used only if the implied thigh length is anatomically plausible (330–560 mm), because motion blur on shoes shrinks the fitted radius.
 
 With a scale available:
@@ -201,6 +205,38 @@ Each fit is graded Good, Fair or Poor from:
 
 Poor captures get specific advice on how to re-film.
 
+## Back & posture
+
+![Back & posture card](assets/screenshots/posture.png)
+
+| Back contour on the video | Posture panel in the PDF report |
+| :---: | :---: |
+| ![Back contour overlay](assets/screenshots/back-contour.jpg) | ![Posture panel](assets/screenshots/posture-panel.jpg) |
+
+Pose models give only two points on the trunk (shoulder and hip), so they can't see a hunched back. OpenVelo reads it from your silhouette instead (implemented in [`src/posture.py`](src/posture.py)):
+
+1. **Silhouette.** MediaPipe's person segmentation mask comes with every frame.
+2. **Back contour.** The hip → shoulder line is split into 15 stations (18–94% of its length, which skips the glutes and the neck). From each station OpenVelo steps along the normal pointing out of your back until it leaves the silhouette. That edge point is the back contour.
+3. **Roundness.** Each contour point's signed distance from the straight line joining the contour's ends, as a percentage of back length (+ = bulging out). The **roundness index** is the peak of that curve. A 5-frame moving median removes mask flicker.
+4. **Verdict.** Under 4% is a **neutral back**, 4–6.5% **slight rounding**, and 6.5% or more a **rounded back**. These bands were calibrated on the bundled clips: an upright, flat back reads about 2%, and visibly hunched road and TT positions read 7–10%.
+5. **Per stroke.** Using the crank-angle strokes from the kinematics model, each stroke gets its median roundness, its average back shape and its duration. Strokes cut off by the clip's start or end are left out of the timing stats.
+
+The report then shows:
+
+- **Vertical displacement.** Hip and shoulder rise over time (mm when a scale is known), which shows bouncing and rocking.
+- **Back roundness map.** Time across, position along the back (hips → shoulders) up. Amber and red mark where and when the back rounds; teal marks arching.
+- **Average back shape.** One curve per pedal stroke, coloured by verdict, so a back that tires and rounds late in the clip stands out.
+- **Posture checklist and score.** Back shape (double weight), torso angle, shoulder angle, elbow bend and pelvis stability (hip rock ≤ 10 mm), each graded In range, Close or Adjust.
+- **Plan items.** A rounded back adds an adjustment to the plan. If the reach is also short, that's a sign you're cramped and folding, so it suggests a longer stem. Otherwise it suggests a shorter reach or higher bars.
+
+### Analysis video
+
+![Analysis video frame](assets/screenshots/analysis-video.jpg)
+
+**Export video** on any video fit (or `--video_out` on the command line) renders the clip side by side with a live panel, in the style of a lifting-form breakdown. The panel uses a shared time axis, so the displacement traces, roundness map and back shapes grow with the video. The verdict under them follows the current pedal stroke. Black letterbox bars are cropped automatically. The render is H.264 (via `imageio-ffmpeg`) so it plays on phones and in messaging apps. It's cached next to the fit after the first export.
+
+Back roundness needs the MediaPipe engine (RTMPose has no segmentation). Baggy clothing can add a little curve, so ride in a fitted jersey.
+
 ## Riding-style target ranges
 
 | Metric | Endurance road | Race road | Triathlon / TT | Gravel / MTB |
@@ -221,7 +257,8 @@ Poor captures get specific advice on how to re-film.
 ## Command line
 
 ```bash
-python src/analyze_video.py -i assets/examples/videos/testvideo2.mp4 -p road_race --rider_height 175 -op output/fit.pdf
+python src/analyze_video.py -i assets/examples/videos/tes2.mp4 -p tri_tt --rider_height 170 -op output/fit.pdf
+python src/analyze_video.py -i assets/examples/videos/tes1.mp4 -p tri_tt -op output/tes1.pdf -ov output/tes1.mp4
 python src/analyze_image.py -i assets/examples/images/1.jpg -p road_endurance -op output/photo.pdf
 python scripts/build_demo.py      # rebuild the bundled sample report
 python -m pytest -q               # run the test suite
@@ -233,6 +270,8 @@ python -m pytest -q               # run the test suite
 app.py                      Launches the studio (FastAPI + Uvicorn)
 src/
   kinematics.py             Leg tracking, crank angle, Fourier models, bootstrap CIs
+  posture.py                Back contour from the silhouette, roundness, posture checks
+  video_export.py           Side-by-side analysis video (ride + live posture panel)
   engine.py                 Video/photo analysis pipeline and scoring
   pose_backends.py          MediaPipe and RTMPose adapters
   fit_profiles.py           Target ranges, personalisation, recommendations
@@ -240,7 +279,7 @@ src/
   web/app.py                REST API: background jobs, saved fits, media, PDF
   web/static/               The studio UI (HTML, CSS, ES modules; no build step)
 assets/demo/                Pre-computed sample fit shown on first launch
-assets/examples/            Sample videos and photos
+assets/examples/            Sample videos (incl. two portrait TT-bike clips, tes1/tes2) and photos
 scripts/build_demo.py       Regenerates assets/demo
 tests/                      Unit tests for the maths, scoring and reports
 ```

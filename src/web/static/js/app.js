@@ -5,6 +5,7 @@ import {
 } from "./util.js";
 import { poseAt, drawPose, fitCanvas, containRect } from "./overlay.js";
 import { renderStrokeChart, chartTitle } from "./chart.js";
+import { renderPosture, backStatus } from "./posture.js";
 import { openLive, initLive, closeLive } from "./live.js";
 import { logoAnim, loaderBlock } from "./logo.js";
 import { createIntake } from "./intake.js";
@@ -123,7 +124,7 @@ function startHero(demo) {
     const pose = poseAt(track, t);
     const trail = [];
     for (let k = Math.max(0, pose.index - 18); k <= pose.index; k++) if (ball[k]) trail.push(ball[k]);
-    drawPose(ctx, pose, rect, { crank: track.crank, trail });
+    drawPose(ctx, pose, rect, { crank: track.crank, trail, backStatus: backStatus(pose.backIndex, track.back_thresholds) });
     $("#hero-knee").textContent = deg(pose.angles.knee, 0);
     $("#hero-hip").textContent = deg(pose.angles.hip, 0);
     $("#hero-crank").textContent = pose.theta == null ? "–" : `${Math.round(pose.theta)}°`;
@@ -438,6 +439,8 @@ function renderFitHeader(d) {
   const sel = $("#fit-profile");
   sel.replaceChildren(...Object.entries(app.config.profiles).map(([k, p]) => h("option", { value: k, selected: k === d.profile }, p.short)));
   $("#btn-pdf").href = `/api/sessions/${d.id}/report.pdf`;
+  $("#btn-video").href = `/api/sessions/${d.id}/analysis.mp4`;
+  $("#btn-video").hidden = !d.posture?.available;
   $("#btn-delete").hidden = d.id === "demo";
 }
 
@@ -584,6 +587,7 @@ function currentJoint() {
 function renderChart() {
   const d = app.fit;
   const card = $("#chart-card");
+  app.posture = d ? renderPosture($("#posture-card"), d, (t) => app.player?.seekTo(t)) : null;
   card.hidden = !d?.stroke;
   if (!d?.stroke) return;
   const joint = currentJoint();
@@ -600,7 +604,7 @@ function setupPlayer(d) {
   const canvas = $("#stage-canvas");
   const msg = $("#stage-message");
   const track = d.track;
-  const layers = { skeleton: true, angles: true, crank: true };
+  const layers = { skeleton: true, angles: true, crank: true, back: true };
   $$("#layer-toggles button").forEach((b) => (layers[b.dataset.layer] = b.getAttribute("aria-pressed") === "true"));
   msg.hidden = true;
   img.hidden = true;
@@ -651,11 +655,16 @@ function setupPlayer(d) {
     ctx.clearRect(0, 0, width, height);
     const rect = containRect(track.size[0], track.size[1], width, height);
     const pose = poseAt(track, t);
-    drawPose(ctx, pose, rect, { layers, crank: track.crank });
+    const bs = backStatus(pose.backIndex, track.back_thresholds);
+    drawPose(ctx, pose, rect, { layers, crank: track.crank, backStatus: bs });
     app.chart?.setCursor(pose.theta);
-    const chip = (k, v) => h("span", { class: "hud-chip" }, h("span", { class: "k" }, k), v);
+    app.posture?.(t);
+    const chip = (k, v, cls = "") => h("span", { class: `hud-chip ${cls}` }, h("span", { class: "k" }, k), v);
+    const stroke = d.posture?.strokes?.find((s) => t >= s.t0 && t <= s.t1 + 0.02);
     $("#hud-chips").replaceChildren(chip("Knee", deg(pose.angles.knee, 0)), chip("Hip", deg(pose.angles.hip, 0)),
-      pose.theta != null ? chip("Crank", `${Math.round(pose.theta)}°`) : "");
+      pose.theta != null ? chip("Crank", `${Math.round(pose.theta)}°`) : "",
+      stroke ? chip("Stroke", stroke.n) : "",
+      bs ? chip("Back", `${pose.backIndex.toFixed(1)}%`, `hud-${bs}`) : "");
     const dur = duration();
     scrub.value = String(Math.round((t / dur) * 1000));
     $("#scrub-fill").style.width = `${(t / dur) * 100}%`;
@@ -749,6 +758,7 @@ function setupPlayer(d) {
 
   app.player = {
     toggle, step,
+    seekTo(t) { pause(); seek(t); },
     nextBdc() {
       const t = now();
       const next = bdcTimes.find((x) => x > t + 0.05) ?? bdcTimes[0];
@@ -773,6 +783,26 @@ function setupPlayer(d) {
 }
 
 // ---------------------------------------------------------------- fit actions
+// Rendering takes a few seconds, so fetch with feedback instead of a bare link
+async function exportVideo(e) {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  if (btn.getAttribute("aria-busy") === "true") return;
+  btn.setAttribute("aria-busy", "true");
+  toast("Rendering your analysis video…");
+  try {
+    const res = await fetch(btn.href);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    const url = URL.createObjectURL(await res.blob());
+    h("a", { href: url, download: `openvelo-analysis-${app.fit.id}.mp4` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (err) {
+    toast(`Couldn't export the video: ${err.message}`, { tone: "error" });
+  } finally {
+    btn.removeAttribute("aria-busy");
+  }
+}
+
 async function rescore(profile) {
   const d = app.fit;
   try {
@@ -960,6 +990,7 @@ async function boot() {
   initShortcuts();
   $("#fit-profile").addEventListener("change", (e) => rescore(e.target.value));
   $("#btn-delete").addEventListener("click", deleteFit);
+  $("#btn-video").addEventListener("click", exportVideo);
   $("#btn-compare").addEventListener("click", openCompare);
   $$('#chart-joint input').forEach((r) => r.addEventListener("change", renderChart));
   window.addEventListener("hashchange", route);

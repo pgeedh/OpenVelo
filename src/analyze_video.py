@@ -10,6 +10,7 @@ from src import engine
 from src import fit_profiles as fp
 from src import report
 from src import coach
+from src import video_export
 
 
 def main():
@@ -24,6 +25,8 @@ def main():
     parser.add_argument("--rider_name", type=str, default="", help="Rider name for the report")
     parser.add_argument("--crank_mm", type=float, default=172.5, help="Crank arm length in mm")
     parser.add_argument("--rider_height", type=float, help="Rider height in cm for scale")
+    parser.add_argument("--video_out", "-ov", type=str,
+                        help="Also write a side-by-side analysis video (ride + back & posture panel)")
     args = parser.parse_args()
 
     print("\n🚴 OpenVelo Dynamic Bike Fit Analysis")
@@ -97,6 +100,9 @@ def main():
         rider_name=args.rider_name,
     )
     print(f"\n✅ Fit Report successfully saved to: {args.output_pdf}\n")
+    if args.video_out:
+        video_export.render_analysis_video(result, args.input, args.video_out)
+        print(f"✅ Analysis video saved to: {args.video_out}\n")
 
 
 if __name__ == "__main__":

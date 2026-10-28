@@ -134,6 +134,46 @@ def generate_fit_report(result, snapshot_paths, output_path=None, coach_text=Non
         pdf.set_text_color(0, 0, 0)
         pdf.ln()
 
+    # Back & posture
+    post = result.get('posture') or {}
+    check = result.get('posture_check') or {}
+    if post.get('available') or check.get('checks'):
+        pdf.section('Back & posture')
+        if post.get('available'):
+            pdf.set_font('Helvetica', 'B', 11)
+            pdf.set_text_color(*STATUS_RGB[post['status']])
+            bulge = f" ({post['bulge_mm']:.0f} mm)" if post.get('bulge_mm') else ''
+            pdf.cell(0, 7, _latin(f"{post['label']}: back curve {post['roundness']:.1f}% of back length{bulge}, "
+                                  f"rounded in {post['rounded_share'] * 100:.0f}% of frames"),
+                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_text_color(0, 0, 0)
+            if 'posture' in snapshot_paths:
+                if pdf.get_y() > 150:
+                    pdf.add_page()
+                pdf.image(snapshot_paths['posture'], x=10, w=190)
+                pdf.ln(2)
+            tm = post.get('timing')
+            if tm:
+                pdf.set_font('Helvetica', '', 9)
+                pdf.set_text_color(90, 90, 90)
+                pdf.cell(0, 5, _latin(f"Avg stroke {tm['avg']:.2f} s   |   fastest stroke {tm['fastest']['n']} "
+                                      f"({tm['fastest']['duration']:.2f} s)   |   slowest stroke {tm['slowest']['n']} "
+                                      f"({tm['slowest']['duration']:.2f} s)   |   variation {tm['cv_pct']:.0f}%"),
+                         new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.set_text_color(0, 0, 0)
+        if check.get('checks'):
+            pdf.ln(1)
+            pdf.set_font('Helvetica', 'B', 10)
+            pdf.cell(0, 7, f"Posture score: {check['score']}/100", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            for c in check['checks']:
+                pdf.set_font('Helvetica', 'B', 9)
+                pdf.set_text_color(*STATUS_RGB[c['status']])
+                pdf.cell(38, 5.5, _latin(STATUS_TXT[c['status']]))
+                pdf.set_text_color(0, 0, 0)
+                pdf.cell(32, 5.5, _latin(c['label']))
+                pdf.set_font('Helvetica', '', 9)
+                pdf.multi_cell(0, 5.5, _latin(f"{c['value']} - {c['detail']}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
     # Recommendations
     pdf.section('What to adjust (in this order)')
     pdf.set_font('Helvetica', '', 10)

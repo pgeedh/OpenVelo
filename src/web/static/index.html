@@ -463,6 +463,7 @@
             <label class="sr-only" for="fit-profile">Riding style</label>
             <select class="select" id="fit-profile" style="width: auto; min-height: 40px"></select>
             <button class="btn btn-secondary" type="button" id="btn-compare"><svg class="icon"><use href="#i-git-compare-arrows"/></svg>Compare</button>
+            <a class="btn btn-secondary" id="btn-video" href="#" download hidden><svg class="icon"><use href="#i-film"/></svg>Export video</a>
             <a class="btn btn-primary" id="btn-pdf" href="#" download><svg class="icon"><use href="#i-download"/></svg>Export PDF</a>
             <button class="icon-btn" type="button" id="btn-delete" aria-label="Delete this fit"><svg class="icon"><use href="#i-trash-2"/></svg></button>
           </div>
@@ -481,6 +482,7 @@
                       <button type="button" aria-pressed="true" data-layer="skeleton">Skeleton</button>
                       <button type="button" aria-pressed="true" data-layer="angles">Angles</button>
                       <button type="button" aria-pressed="true" data-layer="crank">Crank</button>
+                      <button type="button" aria-pressed="true" data-layer="back">Back</button>
                     </div>
                   </div>
                 </div>
@@ -566,6 +568,17 @@
                 <summary>View as table</summary>
                 <div class="table-scroll" id="chart-table"></div>
               </details>
+            </div>
+
+            <div class="card fit-posture" id="posture-card" hidden>
+              <div class="card-head">
+                <div>
+                  <h2 class="t-h3"><svg class="icon"><use href="#i-scan-eye"/></svg>Back &amp; posture</h2>
+                  <p class="t-caption">Back roundness and posture through every pedal stroke</p>
+                </div>
+                <div class="row" style="gap: 6px" data-posture-badges></div>
+              </div>
+              <div class="posture-body" data-posture-body></div>
             </div>
 
             <div class="card fit-snaps">

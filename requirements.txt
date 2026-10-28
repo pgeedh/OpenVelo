@@ -11,8 +11,9 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
 
-# PDF reports
+# PDF reports and analysis video export (H.264)
 fpdf2>=2.8.0
+imageio-ffmpeg>=0.5.1
 
 # Optional second pose engine (RTMPose · Halpe-26). Remove these two lines
 # for a lighter install; the studio falls back to MediaPipe automatically.

@@ -23,9 +23,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from src import coach, engine, fit_profiles as fp, pose_backends as pb, report  # noqa: E402
+from src import coach, engine, fit_profiles as fp, pose_backends as pb, report, video_export  # noqa: E402
 
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
 SAMPLES_DIR = os.path.join(ROOT, 'assets', 'examples')
@@ -373,6 +373,24 @@ def session_pdf(sid: str):
     name = f"openvelo-fit-{sid}.pdf"
     return Response(pdf, media_type='application/pdf',
                     headers={'Content-Disposition': f'attachment; filename="{name}"'})
+
+
+@app.get("/api/sessions/{sid}/analysis.mp4")
+def session_video(sid: str):
+    """Side-by-side analysis video (ride + live posture panel), rendered once and cached."""
+    data = _load(sid)
+    out = os.path.join(_session_dir(sid), 'analysis.mp4')
+    if not os.path.isfile(out):
+        path = _media_path(sid, data)
+        if not path or not os.path.isfile(path):
+            raise HTTPException(404, "The original video is no longer available.")
+        try:
+            with WORKER:
+                video_export.render_analysis_video(data, path, out + '.tmp.mp4')
+        except engine.AnalysisError as e:
+            raise HTTPException(400, str(e))
+        os.replace(out + '.tmp.mp4', out)
+    return FileResponse(out, media_type='video/mp4', filename=f"openvelo-analysis-{sid}.mp4")
 
 
 # --------------------------------------------------------------------------- #
