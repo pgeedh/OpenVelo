@@ -96,7 +96,7 @@ Each frame is processed by **MediaPipe Pose Landmarker Heavy** (33 landmarks inc
 For each limb group (knee, ankle, heel, toe; and elbow, wrist), every frame *t* has a hidden state *s<sub>t</sub>* ∈ {0 = labels as given, 1 = labels swapped}. The tracker finds the state sequence that minimises
 
 $$
-J = \sum_t \left[ \frac{\lVert A_t(s_t) - A_{t-1}(s_{t-1}) \rVert + \lVert B_t(s_t) - B_{t-1}(s_{t-1}) \rVert}{\bar L_{\text{thigh}}} + \lambda\, s_t \right]
+J = \sum_t \left[ \frac{\lVert A_t(s_t) - A_{t-1}(s_{t-1}) \rVert + \lVert B_t(s_t) - B_{t-1}(s_{t-1}) \rVert}{\bar L_{\text{thigh}}} + \lambda s_t \right]
 $$
 
 where *A* and *B* are the two limb tracks under each labelling, distances are mean joint displacements, $\bar L_{\text{thigh}}$ normalises for scale, and λ = 0.12 is a small prior that favours the model's own labels. A swap costs two jumps of roughly a crank diameter, so Viterbi repairs it. Normal pedalling motion between frames costs little. The near side is picked from MediaPipe depth (lower *z* is closer), or otherwise from the facing direction.
@@ -110,23 +110,23 @@ where *A* and *B* are the two limb tracks under each labelling, distances are me
 
 ### 4. Crank geometry and crank angle
 
-The pedal spindle is approximated by the ball of the foot, $\mathbf b = \mathbf{heel} + 0.72\,(\mathbf{toe} - \mathbf{heel})$, which traces the crank circle. The circle $(c_x, c_y, r)$ is fitted robustly:
+The pedal spindle is approximated by the ball of the foot, $\mathbf b = \mathbf{heel} + 0.72(\mathbf{toe} - \mathbf{heel})$, which traces the crank circle. The circle $(c_x, c_y, r)$ is fitted robustly:
 
 1. **Seed:** the better (lower median residual) of the algebraic Kåsa fit and a median seed. The median seed takes the coordinate-wise median as the centre and the median distance as the radius, and a full pedal circle can't be dragged by a few wild points.
-2. **Trim:** points with residual $\lvert d_i - r \rvert > 3\,\text{MAD}$ are dropped and the seed is re-fitted.
-3. **Refine:** Gauss–Newton on the geometric (orthogonal-distance) error with Huber weights, $w_i = \min\left(1, \frac{1.345\,s}{\lvert d_i - r\rvert}\right)$.
+2. **Trim:** points with residual $\lvert d_i - r \rvert > 3 \cdot \text{MAD}$ are dropped and the seed is re-fitted.
+3. **Refine:** Gauss–Newton on the geometric (orthogonal-distance) error with Huber weights, $w_i = \min\left(1, \frac{1.345 \cdot s}{\lvert d_i - r\rvert}\right)$.
 
 The crank angle of each frame is
 
 $$
-\theta = \operatorname{atan2}\big(f\,(b_x - c_x),\; -(b_y - c_y)\big) \bmod 360^\circ, \qquad f = \pm 1 \text{ for a rider facing right or left.}
+\theta = \mathrm{atan2}\big(f(b_x - c_x), -(b_y - c_y)\big) \bmod 360^\circ, \qquad f = \pm 1 \text{ for a rider facing right or left.}
 $$
 
 If the unwrapped θ runs backwards, the facing direction was misjudged and *f* is flipped. Cadence is nearly constant within a stroke, so the unwrapped θ is smoothed over ≈0.35 s to remove foot-keypoint jitter.
 
-A second phase estimate comes from the **Hilbert transform** of leg extension (hip–ankle distance): $\varphi = \arg \mathcal H\{d_{\text{hip–ankle}}\}$. It is anchored to true crank angle by the circular-mean offset $\Delta = \operatorname{atan2}\left(\overline{\sin(\theta-\varphi)}, \overline{\cos(\theta-\varphi)}\right)$. OpenVelo then keeps whichever phase explains the knee signal with less scatter (it must be at least 10% better to replace the circle phase). With no usable circle, the Hilbert phase is used alone, with its peak placed at 180°.
+A second phase estimate comes from the **Hilbert transform** of leg extension (hip–ankle distance): $\varphi = \arg \mathcal H \lbrace d_{\text{hip–ankle}} \rbrace$. It is anchored to true crank angle by the circular-mean offset $\Delta = \mathrm{atan2}\left(\overline{\sin(\theta-\varphi)}, \overline{\cos(\theta-\varphi)}\right)$. OpenVelo then keeps whichever phase explains the knee signal with less scatter (it must be at least 10% better to replace the circle phase). With no usable circle, the Hilbert phase is used alone, with its peak placed at 180°.
 
-**Strokes** are whole revolutions of the unwrapped θ. **Cadence** is the least-squares slope of unwrapped θ against time: $\text{rpm} = \frac{60}{360}\,\frac{d\theta}{dt}$.
+**Strokes** are whole revolutions of the unwrapped θ. **Cadence** is the least-squares slope of unwrapped θ against time: $\text{rpm} = \frac{60}{360} \cdot \frac{d\theta}{dt}$.
 
 ### 5. Joint angles (per frame, side view)
 
@@ -139,7 +139,7 @@ A second phase estimate comes from the **Hilbert transform** of leg extension (h
 | Elbow | $\angle(\text{shoulder}, \text{elbow}, \text{wrist})$ |
 | Ankle | $\angle(\text{knee}, \text{ankle}, \text{toe})$; ankling = its range over the stroke |
 
-Inner angles use $\theta_{ABC} = \arccos\frac{(\mathbf A-\mathbf B)\cdot(\mathbf C-\mathbf B)}{\lVert\mathbf A-\mathbf B\rVert\,\lVert\mathbf C-\mathbf B\rVert}$.
+Inner angles use $\theta_{ABC} = \arccos\frac{(\mathbf A-\mathbf B)\cdot(\mathbf C-\mathbf B)}{\lVert\mathbf A-\mathbf B\rVert \lVert\mathbf C-\mathbf B\rVert}$.
 
 ### 6. Crank-angle modelling (robust Fourier regression)
 
@@ -164,7 +164,7 @@ Whole strokes are resampled with replacement (B = 200), the model is re-fitted, 
 
 The scale (mm per pixel) comes from:
 
-- **Rider height** (preferred), using Winter's anthropometrics: thigh + shank ≈ 0.491·H, so $s = \dfrac{0.491\,H}{\bar L_{\text{thigh}} + \bar L_{\text{shank}}}$.
+- **Rider height** (preferred), using Winter's anthropometrics: thigh + shank ≈ 0.491·H, so $s = \dfrac{0.491 H}{\bar L_{\text{thigh}} + \bar L_{\text{shank}}}$.
 - **Crank circle**, $s = \text{crank length}/r$. This is used only if the implied thigh length is anatomically plausible (330–560 mm), because motion blur on shoes shrinks the fitted radius.
 
 With a scale available:
