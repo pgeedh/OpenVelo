@@ -481,6 +481,7 @@
                       <button type="button" aria-pressed="true" data-layer="skeleton">Skeleton</button>
                       <button type="button" aria-pressed="true" data-layer="angles">Angles</button>
                       <button type="button" aria-pressed="true" data-layer="crank">Crank</button>
+                      <button type="button" aria-pressed="true" data-layer="back">Back</button>
                     </div>
                   </div>
                 </div>
@@ -566,6 +567,17 @@
                 <summary>View as table</summary>
                 <div class="table-scroll" id="chart-table"></div>
               </details>
+            </div>
+
+            <div class="card fit-posture" id="posture-card" hidden>
+              <div class="card-head">
+                <div>
+                  <h2 class="t-h3"><svg class="icon"><use href="#i-scan-eye"/></svg>Back &amp; posture</h2>
+                  <p class="t-caption">Back roundness and posture through every pedal stroke</p>
+                </div>
+                <div class="row" style="gap: 6px" data-posture-badges></div>
+              </div>
+              <div class="posture-body" data-posture-body></div>
             </div>
 
             <div class="card fit-snaps">

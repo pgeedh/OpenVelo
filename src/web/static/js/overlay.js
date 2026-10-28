@@ -49,7 +49,9 @@ export function poseAt(track, time) {
     if (d > 180) d -= 360;
     theta = (theta + d * f + 360) % 360;
   }
-  return { index: i, joints, angles, theta };
+  // Back contour isn't interpolated: it's a silhouette edge, so use the nearest frame
+  const k = f < 0.5 ? i : j;
+  return { index: i, joints, angles, theta, back: track.back?.[k], backIndex: track.back_index?.[k] };
 }
 
 /** Size a canvas to its CSS box at device pixel ratio; returns the 2D context. */
@@ -76,6 +78,7 @@ export function containRect(mw, mh, bw, bh) {
 function palette() {
   return {
     accent: cssVar("--color-accent") || "#c3f260",
+    status: { ok: cssVar("--color-ok"), watch: cssVar("--color-watch"), fix: cssVar("--color-fix") },
     bone: "rgba(255,255,255,0.95)",
     shadow: "rgba(0,0,0,0.55)",
     pill: "rgba(14,16,20,0.82)",
@@ -99,11 +102,25 @@ function angleLabel(ctx, cx, y, text, col) {
  * Draw one pose. `rect` maps normalised coords to canvas pixels.
  * layers: { skeleton, angles, crank }. `crank` is {cx, cy, r} normalised (r by width).
  */
-export function drawPose(ctx, pose, rect, { layers = {}, crank = null, trail = null } = {}) {
+export function drawPose(ctx, pose, rect, { layers = {}, crank = null, trail = null, backStatus = null } = {}) {
   const col = palette();
   const P = (p) => [rect.x + p[0] * rect.w, rect.y + p[1] * rect.h];
   const J = pose.joints;
   const scale = Math.max(0.7, Math.min(1.4, rect.h / 520));
+
+  if (layers.back !== false && pose.back) {
+    // Back contour, coloured by this frame's roundness
+    const pts = pose.back.map(P);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const pass of [0, 1]) {
+      ctx.strokeStyle = pass ? col.status[backStatus] || col.status.ok : col.shadow;
+      ctx.lineWidth = (pass ? 3.5 : 7) * scale;
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.stroke();
+    }
+  }
 
   if (layers.crank !== false && crank) {
     const c = P([crank.cx, crank.cy]);
@@ -130,6 +147,15 @@ export function drawPose(ctx, pose, rect, { layers = {}, crank = null, trail = n
       ctx.arc(c[0], c[1], 4 * scale, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  if (layers.crank !== false && J.heel && J.toe) {
+    // Box around foot and pedal, tracked through the stroke
+    const foot = ["ankle", "heel", "toe", "ball"].filter((k) => J[k]).map((k) => P(J[k]));
+    const xs = foot.map((p) => p[0]), ys = foot.map((p) => p[1]), pad = 10 * scale;
+    ctx.strokeStyle = col.status.fix;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) - Math.min(...xs) + 2 * pad, Math.max(...ys) - Math.min(...ys) + 2 * pad);
   }
 
   if (trail && trail.length > 1) {
