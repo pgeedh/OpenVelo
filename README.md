@@ -249,7 +249,7 @@ Back roundness needs the MediaPipe engine (RTMPose has no segmentation). Baggy c
 ## Command line
 
 ```bash
-python src/analyze_video.py -i assets/examples/videos/testvideo2.mp4 -p road_race --rider_height 175 -op output/fit.pdf
+python src/analyze_video.py -i assets/examples/videos/tes2.mp4 -p tri_tt --rider_height 170 -op output/fit.pdf
 python src/analyze_video.py -i assets/examples/videos/tes1.mp4 -p tri_tt -op output/tes1.pdf -ov output/tes1.mp4
 python src/analyze_image.py -i assets/examples/images/1.jpg -p road_endurance -op output/photo.pdf
 python scripts/build_demo.py      # rebuild the bundled sample report
