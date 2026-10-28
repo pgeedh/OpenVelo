@@ -4,3 +4,4 @@ __pycache__/
 .env
 output/
 .DS_Store
+assets/demo/analysis.mp4

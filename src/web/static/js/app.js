@@ -439,6 +439,8 @@ function renderFitHeader(d) {
   const sel = $("#fit-profile");
   sel.replaceChildren(...Object.entries(app.config.profiles).map(([k, p]) => h("option", { value: k, selected: k === d.profile }, p.short)));
   $("#btn-pdf").href = `/api/sessions/${d.id}/report.pdf`;
+  $("#btn-video").href = `/api/sessions/${d.id}/analysis.mp4`;
+  $("#btn-video").hidden = !d.posture?.available;
   $("#btn-delete").hidden = d.id === "demo";
 }
 
@@ -781,6 +783,26 @@ function setupPlayer(d) {
 }
 
 // ---------------------------------------------------------------- fit actions
+// Rendering takes a few seconds, so fetch with feedback instead of a bare link
+async function exportVideo(e) {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  if (btn.getAttribute("aria-busy") === "true") return;
+  btn.setAttribute("aria-busy", "true");
+  toast("Rendering your analysis video…");
+  try {
+    const res = await fetch(btn.href);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    const url = URL.createObjectURL(await res.blob());
+    h("a", { href: url, download: `openvelo-analysis-${app.fit.id}.mp4` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (err) {
+    toast(`Couldn't export the video: ${err.message}`, { tone: "error" });
+  } finally {
+    btn.removeAttribute("aria-busy");
+  }
+}
+
 async function rescore(profile) {
   const d = app.fit;
   try {
@@ -968,6 +990,7 @@ async function boot() {
   initShortcuts();
   $("#fit-profile").addEventListener("change", (e) => rescore(e.target.value));
   $("#btn-delete").addEventListener("click", deleteFit);
+  $("#btn-video").addEventListener("click", exportVideo);
   $("#btn-compare").addEventListener("click", openCompare);
   $$('#chart-joint input').forEach((r) => r.addEventListener("change", renderChart));
   window.addEventListener("hashchange", route);

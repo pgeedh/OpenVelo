@@ -1106,3 +1106,4 @@ dialog::backdrop { background: var(--color-backdrop); backdrop-filter: blur(4px)
 .hud-chip.hud-ok .k { color: var(--color-ok); }
 .hud-chip.hud-watch .k { color: var(--color-watch); }
 .hud-chip.hud-fix .k { color: var(--color-fix); }
+.btn[aria-busy="true"] { opacity: 0.6; cursor: progress; }

@@ -174,3 +174,19 @@ def test_posture_summary_strokes_and_timing():
     assert post['verdict'] == 'rounded' and len(post['strokes']) == 3
     assert post['timing']['avg'] == 1.0
     assert posture.back_recommendation(post)['metric'] == 'back'
+
+
+def test_analysis_video_panel_draws_progressively():
+    from src import video_export
+    mask, hip, sh = _torso_mask(30)
+    prof = posture.back_profile(mask, hip, sh, 'right')
+    times = np.arange(90) / 30.0
+    tracks = {'hip': np.column_stack([np.zeros(90), 300 + 5 * np.sin(times * 9)]),
+              'shoulder': np.column_stack([np.zeros(90), np.full(90, 200.0)])}
+    post = posture.summarize([prof] * 90, times, np.repeat([0, 1, 2], 30), tracks, fps=30.0)
+    panel = video_export._Panel(post, times[-1])
+    early, _ = panel.draw(0.5)
+    late, texts = panel.draw(2.9)
+    assert early.shape == (video_export.OUT_H, video_export.PANEL_W, 3)
+    assert (late != panel.base).sum() > (early != panel.base).sum()
+    assert any('Stroke' in t[1] for t in texts)

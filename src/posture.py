@@ -145,6 +145,8 @@ def summarize(profiles, times, stroke_id=None, tracks=None, mm_per_px=None, fps=
             ri = index[sel][np.isfinite(index[sel])]
             with np.errstate(all='ignore'):
                 shape = np.nanmedian(offs[sel], axis=0)
+            # Light [1 2 1] smoothing along the back for display; ends stay anchored
+            shape[1:-1] = (shape[:-2] + 2 * shape[1:-1] + shape[2:]) / 4
             strokes.append({
                 'n': len(strokes) + 1,
                 't0': round(float(times[sel[0]]), 3), 't1': round(float(times[sel[-1]]), 3),
