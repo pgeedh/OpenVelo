@@ -24,6 +24,7 @@
 - **A ranked adjustment plan.** Saddle height is given in millimetres when your height is known. A **saddle-height simulator** lets you preview the effect of each change.
 - **Interactive report.** Your video plays with the skeleton, joint angles, crank, a tracked pedal box and your back contour (green, amber or red by roundness) drawn on top. The pedal-stroke chart and the posture charts are synced to playback.
 - **Back & posture charts.** Hip and shoulder vertical displacement, a back roundness map, the average back shape of every pedal stroke, and stroke timing (average, fastest, slowest). Click a chart to jump the video there. All of it is in the PDF too.
+- **Analysis video export.** One click on **Export video** renders a side-by-side MP4: your ride with skeleton, back contour and pedal box, next to a live panel that fills in as you pedal (displacement, roundness map, back shape per stroke, stroke timing and a per-stroke back verdict). Ready to share or send to a coach.
 - **History and comparison.** Every fit is saved, so you can compare before and after each adjustment. Export any fit as a PDF.
 - **Polished, accessible UI.** Light and dark themes, [Phosphor](https://phosphoricons.com) icons (the free icon set built into Framer), an animated logo for loading states, keyboard shortcuts, and a layout that works down to phone width.
 - **Private and offline.** No account, no API key and no cloud service. Video and results stay on your computer.
@@ -220,6 +221,12 @@ The report then shows:
 - **Posture checklist and score.** Back shape (double weight), torso angle, shoulder angle, elbow bend and pelvis stability (hip rock ≤ 10 mm), each graded In range, Close or Adjust.
 - **Plan items.** A rounded back adds an adjustment to the plan. If the reach is also short, that's a sign you're cramped and folding, so it suggests a longer stem. Otherwise it suggests a shorter reach or higher bars.
 
+### Analysis video
+
+![Analysis video frame](assets/screenshots/analysis-video.jpg)
+
+**Export video** on any video fit (or `--video_out` on the command line) renders the clip side by side with a live panel, in the style of a lifting-form breakdown. The panel uses a shared time axis, so the displacement traces, roundness map and back shapes grow with the video. The verdict under them follows the current pedal stroke. Black letterbox bars are cropped automatically. The render is H.264 (via `imageio-ffmpeg`) so it plays on phones and in messaging apps. It's cached next to the fit after the first export.
+
 Back roundness needs the MediaPipe engine (RTMPose has no segmentation). Baggy clothing can add a little curve, so ride in a fitted jersey.
 
 ## Riding-style target ranges
@@ -243,6 +250,7 @@ Back roundness needs the MediaPipe engine (RTMPose has no segmentation). Baggy c
 
 ```bash
 python src/analyze_video.py -i assets/examples/videos/testvideo2.mp4 -p road_race --rider_height 175 -op output/fit.pdf
+python src/analyze_video.py -i assets/examples/videos/tes1.mp4 -p tri_tt -op output/tes1.pdf -ov output/tes1.mp4
 python src/analyze_image.py -i assets/examples/images/1.jpg -p road_endurance -op output/photo.pdf
 python scripts/build_demo.py      # rebuild the bundled sample report
 python -m pytest -q               # run the test suite
@@ -255,6 +263,7 @@ app.py                      Launches the studio (FastAPI + Uvicorn)
 src/
   kinematics.py             Leg tracking, crank angle, Fourier models, bootstrap CIs
   posture.py                Back contour from the silhouette, roundness, posture checks
+  video_export.py           Side-by-side analysis video (ride + live posture panel)
   engine.py                 Video/photo analysis pipeline and scoring
   pose_backends.py          MediaPipe and RTMPose adapters
   fit_profiles.py           Target ranges, personalisation, recommendations
@@ -262,7 +271,7 @@ src/
   web/app.py                REST API: background jobs, saved fits, media, PDF
   web/static/               The studio UI (HTML, CSS, ES modules; no build step)
 assets/demo/                Pre-computed sample fit shown on first launch
-assets/examples/            Sample videos and photos
+assets/examples/            Sample videos (incl. two portrait TT-bike clips, tes1/tes2) and photos
 scripts/build_demo.py       Regenerates assets/demo
 tests/                      Unit tests for the maths, scoring and reports
 ```
