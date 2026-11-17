@@ -6,6 +6,7 @@
 ![Python](https://img.shields.io/badge/python-3.9%E2%80%933.12-blue)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-Pose%20Heavy-orange)
 ![RTMPose](https://img.shields.io/badge/RTMPose-Halpe--26-purple)
+[![Ultralytics YOLO Pose](https://img.shields.io/badge/Ultralytics-YOLO%20Pose-111F68)](https://github.com/ultralytics/ultralytics)
 
 **OpenVelo** is a studio-grade bike fit from a short phone video: no fitter, no appointment, no subscription. It tracks your joints, models every pedal stroke and reads the shape of your back, then turns it into measured angles with confidence ranges and a ranked plan of what to change: saddle, reach and bars. Everything runs privately on your own computer, with no account and no cloud service.
 
@@ -288,7 +289,11 @@ Saved fits live in `output/sessions/` (git-ignored).
 
 ## Ultralytics YOLO pose engine (optional)
 
-Install with `pip install ultralytics`, then pick **Ultralytics YOLO** in the studio or run `python -m src.analyze_video -b yolo-pose`. It uses COCO-17 keypoints, which have no heel or toe, so the foot is estimated from the shank and ankle/foot-angle readings are approximate. Set `OPENVELO_YOLO_MODEL` to your own weights (a 26-keypoint Halpe model gives real feet). Ultralytics is AGPL-3.0 licensed and is not bundled.
+OpenVelo can use [Ultralytics YOLO pose](https://github.com/ultralytics/ultralytics) as an alternative engine. Install it with `pip install ultralytics`, then pick **Ultralytics YOLO** in the studio or run `python -m src.analyze_video -b yolo-pose`. Thanks to the [Ultralytics](https://www.ultralytics.com) team for the open-source models.
+
+It uses COCO-17 keypoints, which have no heel or toe, so the foot is estimated from the shank and ankle/foot-angle readings are approximate. Set `OPENVELO_YOLO_MODEL` to your own weights (a 26-keypoint Halpe model gives real feet).
+
+**License note:** Ultralytics is licensed separately under [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/main/LICENSE), with an [enterprise license](https://www.ultralytics.com/license) available. OpenVelo does not bundle it; it is an optional install, and you are responsible for complying with its license if you use it.
 
 ## License
 
