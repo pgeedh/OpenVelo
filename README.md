@@ -288,4 +288,4 @@ Saved fits live in `output/sessions/` (git-ignored).
 
 ## License
 
-MIT. Created with love for the passion of triathlon by **Pruthvi**.
+MIT, see [LICENSE](LICENSE). Created with love for the passion of triathlon by **Pruthvi**.
