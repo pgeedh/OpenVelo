@@ -289,7 +289,7 @@ Saved fits live in `output/sessions/` (git-ignored).
 
 ## Ultralytics YOLO pose engine (optional)
 
-OpenVelo can use [Ultralytics YOLO pose](https://github.com/ultralytics/ultralytics) as an alternative engine. Install it with `pip install ultralytics`, then pick **Ultralytics YOLO** in the studio or run `python -m src.analyze_video -b yolo-pose`. Thanks to the [Ultralytics](https://www.ultralytics.com) team for the open-source models.
+OpenVelo can use [Ultralytics YOLO pose](https://github.com/ultralytics/ultralytics) as an alternative engine. Install it with `pip install ultralytics`, then pick **Ultralytics YOLO** in the studio or run `python -m src.analyze_video -i your_ride.mp4 -b yolo-pose`. Thanks to the [Ultralytics](https://www.ultralytics.com) team for the open-source models.
 
 ### How to use it
 
@@ -305,8 +305,8 @@ OpenVelo can use [Ultralytics YOLO pose](https://github.com/ultralytics/ultralyt
    - **Command line:**
 
      ```bash
-     python -m src.analyze_video your_ride.mp4 -b yolo-pose
-     python -m src.analyze_image your_photo.jpg -b yolo-pose
+     python -m src.analyze_video -i your_ride.mp4 -b yolo-pose
+     python -m src.analyze_image -i your_photo.jpg -b yolo-pose
      ```
 
 3. The first run downloads the default weights (`yolo11m-pose.pt`). To use another model, or your own, set it first:
