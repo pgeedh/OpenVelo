@@ -21,7 +21,7 @@ def main():
     parser.add_argument("--profile", "-p", type=str, default="road_endurance",
                         choices=list(fp.PROFILES.keys()), help="Riding style profile")
     parser.add_argument("--backend", "-b", type=str, default="auto",
-                        choices=["auto", "mediapipe", "rtmpose", "rtmpose-x"], help="Pose estimation engine")
+                        choices=["auto", "mediapipe", "rtmpose", "rtmpose-x", "yolo-pose"], help="Pose estimation engine")
     parser.add_argument("--crank_pos", type=str, default="auto",
                         choices=["auto", "bottom", "top", "other"], help="Pedal position in photo")
     parser.add_argument("--rider_name", type=str, default="", help="Rider name for the report")
