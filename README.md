@@ -289,7 +289,33 @@ Saved fits live in `output/sessions/` (git-ignored).
 
 ## Ultralytics YOLO pose engine (optional)
 
-OpenVelo can use [Ultralytics YOLO pose](https://github.com/ultralytics/ultralytics) as an alternative engine. Install it with `pip install ultralytics`, then pick **Ultralytics YOLO** in the studio or run `python -m src.analyze_video -b yolo-pose`. Thanks to the [Ultralytics](https://www.ultralytics.com) team for the open-source models.
+OpenVelo can use [Ultralytics YOLO pose](https://github.com/ultralytics/ultralytics) as an alternative engine. Install it with `pip install ultralytics`, then pick **Ultralytics YOLO** in the studio or run `python -m src.analyze_video -i your_ride.mp4 -b yolo-pose`. Thanks to the [Ultralytics](https://www.ultralytics.com) team for the open-source models.
+
+### How to use it
+
+1. Install the package in your OpenVelo environment:
+
+   ```bash
+   pip install ultralytics
+   ```
+
+2. Pick the engine, either in the studio or on the command line.
+
+   - **Studio:** run `python app.py`, then in step 3 of a new fit choose **Ultralytics YOLO** in the engine selector. It only appears once `ultralytics` is installed.
+   - **Command line:**
+
+     ```bash
+     python -m src.analyze_video -i your_ride.mp4 -b yolo-pose
+     python -m src.analyze_image -i your_photo.jpg -b yolo-pose
+     ```
+
+3. The first run downloads the default weights (`yolo11m-pose.pt`). To use another model, or your own, set it first:
+
+   ```bash
+   export OPENVELO_YOLO_MODEL=yolo11x-pose.pt   # larger and more accurate; or a path to custom weights
+   ```
+
+If `ultralytics` is not installed, OpenVelo falls back to MediaPipe automatically.
 
 It uses COCO-17 keypoints, which have no heel or toe, so the foot is estimated from the shank and ankle/foot-angle readings are approximate. Set `OPENVELO_YOLO_MODEL` to your own weights (a 26-keypoint Halpe model gives real feet).
 
