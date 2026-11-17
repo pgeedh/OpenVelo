@@ -19,3 +19,7 @@ imageio-ffmpeg>=0.5.1
 # for a lighter install; the studio falls back to MediaPipe automatically.
 rtmlib>=0.0.15
 onnxruntime>=1.19.0
+
+# Optional third pose engine (Ultralytics YOLO pose, COCO-17). Uncomment to enable.
+# Note: ultralytics is AGPL-3.0 licensed; OpenVelo does not bundle it.
+# ultralytics>=8.3.0

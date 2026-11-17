@@ -11,6 +11,10 @@ mediapipe  : Google MediaPipe Pose Landmarker (Heavy). Bundled, works offline. D
 rtmpose    : OpenMMLab RTMPose-m, Halpe-26 (body + heels + toes) via rtmlib/ONNX Runtime.
              Higher accuracy on cyclists, model auto-downloads (~100 MB) on first use.
 rtmpose-x  : RTMPose-x 384x288 + YOLOX-x detector. Best accuracy, slowest.
+yolo-pose  : Ultralytics YOLO pose (COCO-17). Optional install (`pip install ultralytics`).
+             COCO has no heel/toe points, so the foot is estimated from the shank; see
+             YoloPoseBackend. Set OPENVELO_YOLO_MODEL to use another weights file
+             (for example a custom 26-keypoint Halpe model).
 """
 import os
 
@@ -35,6 +39,11 @@ BACKENDS = {
         'desc': 'Largest RTMPose (384×288) + YOLOX-x detector. Highest accuracy, slowest.',
         'speed': 'Accurate',
     },
+    'yolo-pose': {
+        'name': 'Ultralytics YOLO Pose',
+        'desc': 'YOLO11 pose, 17 COCO keypoints (optional install). Solid ankle tracking; heel and toe are estimated.',
+        'speed': 'Balanced',
+    },
 }
 
 MP_MAP = {
@@ -53,6 +62,45 @@ HALPE26_MAP = {
     20: 'left_toe', 21: 'right_toe', 24: 'left_heel', 25: 'right_heel',
 }
 
+COCO17_MAP = {
+    0: 'nose', 1: 'left_eye', 2: 'right_eye', 3: 'left_ear', 4: 'right_ear',
+    5: 'left_shoulder', 6: 'right_shoulder', 7: 'left_elbow', 8: 'right_elbow',
+    9: 'left_wrist', 10: 'right_wrist', 11: 'left_hip', 12: 'right_hip',
+    13: 'left_knee', 14: 'right_knee', 15: 'left_ankle', 16: 'right_ankle',
+}
+
+YOLO_DEFAULT_MODEL = 'yolo11m-pose.pt'
+FOOT_PER_SHANK = 0.62   # foot length / knee-to-ankle length (anthropometric average)
+HEEL_BACK = 0.20        # heel sits this fraction of the foot length behind the ankle
+
+
+def estimate_foot(kp, facing):
+    """Add left_/right_ heel and toe to a COCO-17 keypoint dict.
+
+    The foot is placed perpendicular to the shank, pointing the way the rider faces.
+    This gives a plausible ball-of-foot position, but a fixed foot angle, so ankle and
+    foot-angle metrics are approximate.
+    """
+    for side in ('left', 'right'):
+        knee, ankle = kp.get(f'{side}_knee'), kp.get(f'{side}_ankle')
+        if knee is None or ankle is None:
+            continue
+        shank = np.array([ankle[0] - knee[0], ankle[1] - knee[1]], dtype=float)
+        length = float(np.hypot(*shank))
+        if length < 1e-6:
+            continue
+        perp = np.array([-shank[1], shank[0]]) / length
+        if perp[0] * facing < 0:
+            perp = -perp
+        foot = FOOT_PER_SHANK * length
+        a = np.array(ankle[:2], dtype=float)
+        toe = a + perp * foot * (1 - HEEL_BACK)
+        heel = a - perp * foot * HEEL_BACK
+        conf = float(ankle[2]) * 0.5   # estimated, so never fully trusted
+        kp[f'{side}_toe'] = (float(toe[0]), float(toe[1]), conf)
+        kp[f'{side}_heel'] = (float(heel[0]), float(heel[1]), conf)
+    return kp
+
 
 def available():
     """Which backends can be imported in this environment."""
@@ -63,6 +111,11 @@ def available():
         out['rtmpose'] = out['rtmpose-x'] = True
     except Exception:
         out['rtmpose'] = out['rtmpose-x'] = False
+    try:
+        import ultralytics  # noqa: F401
+        out['yolo-pose'] = True
+    except Exception:
+        out['yolo-pose'] = False
     return out
 
 
@@ -141,6 +194,41 @@ class RTMPoseBackend:
         pass
 
 
+class YoloPoseBackend:
+    """Ultralytics YOLO pose. Weights auto-download on first use unless a local path is given."""
+
+    def __init__(self, mode='video'):
+        from ultralytics import YOLO
+        self.last_mask = None  # no segmentation: back roundness is unavailable
+        self.model = YOLO(os.environ.get('OPENVELO_YOLO_MODEL', YOLO_DEFAULT_MODEL))
+
+    def process(self, frame_bgr, ts_ms=0):
+        res = self.model.predict(frame_bgr, verbose=False)[0]
+        if res.keypoints is None or res.keypoints.xy is None or len(res.keypoints.xy) == 0:
+            return {}
+        xy = res.keypoints.xy.cpu().numpy()
+        conf = res.keypoints.conf
+        conf = np.ones(xy.shape[:2]) if conf is None else conf.cpu().numpy()
+        # Pick the largest person (the rider is normally closest to camera)
+        i = int(np.argmax([np.ptp(k[:, 0]) * np.ptp(k[:, 1]) for k in xy]))
+        k, c = xy[i], conf[i]
+        kp = {name: (float(k[j, 0]), float(k[j, 1]), float(c[j]))
+              for j, name in COCO17_MAP.items() if j < len(k) and c[j] > 0}
+        if len(k) >= 26:   # custom Halpe-26 weights provide real feet
+            for j, name in HALPE26_MAP.items():
+                if j >= 17 and c[j] > 0:
+                    kp[name] = (float(k[j, 0]), float(k[j, 1]), float(c[j]))
+        elif 'nose' in kp:
+            hips = [kp[n][0] for n in ('left_hip', 'right_hip') if n in kp]
+            if hips:
+                facing = 1.0 if kp['nose'][0] >= float(np.mean(hips)) else -1.0
+                estimate_foot(kp, facing)
+        return kp
+
+    def close(self):
+        pass
+
+
 def make_backend(name='mediapipe', mode='video'):
     if name == 'mediapipe':
         return MediaPipeBackend(mode)
@@ -148,4 +236,6 @@ def make_backend(name='mediapipe', mode='video'):
         return RTMPoseBackend(mode, 'm')
     if name == 'rtmpose-x':
         return RTMPoseBackend(mode, 'x')
+    if name == 'yolo-pose':
+        return YoloPoseBackend(mode)
     raise ValueError(f"Unknown backend '{name}'. Choose from {list(BACKENDS)}")

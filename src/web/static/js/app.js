@@ -909,7 +909,7 @@ function openSettings() {
   $$('#theme-choices input').forEach((r) => (r.checked = r.value === theme));
   const engine = store.get("engine", "auto");
   const avail = app.config.available_backends || {};
-  const engines = [["auto", "Automatic"], ["mediapipe", "MediaPipe"], ["rtmpose", "RTMPose"]].filter(([k]) => k === "auto" || avail[k]);
+  const engines = [["auto", "Automatic"], ["mediapipe", "MediaPipe"], ["rtmpose", "RTMPose"], ["yolo-pose", "Ultralytics YOLO"]].filter(([k]) => k === "auto" || avail[k]);
   $("#engine-choices").replaceChildren(...engines.map(([k, label]) => h("label", {}, h("input", { type: "radio", name: "engine", value: k, checked: k === engine }), h("span", {}, label))));
   const hint = () => {
     const k = $('#engine-choices input:checked')?.value || "auto";

@@ -286,6 +286,10 @@ tests/                      Unit tests for the maths, scoring and reports
 
 Saved fits live in `output/sessions/` (git-ignored).
 
+## Ultralytics YOLO pose engine (optional)
+
+Install with `pip install ultralytics`, then pick **Ultralytics YOLO** in the studio or run `python -m src.analyze_video -b yolo-pose`. It uses COCO-17 keypoints, which have no heel or toe, so the foot is estimated from the shank and ankle/foot-angle readings are approximate. Set `OPENVELO_YOLO_MODEL` to your own weights (a 26-keypoint Halpe model gives real feet). Ultralytics is AGPL-3.0 licensed and is not bundled.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). Created with love for the passion of triathlon by **Pruthvi**.

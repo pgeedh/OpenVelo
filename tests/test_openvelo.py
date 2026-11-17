@@ -118,6 +118,15 @@ def test_pose_backends_available():
     avail = pb.available()
     assert 'mediapipe' in avail
     assert 'rtmpose' in avail
+    assert 'yolo-pose' in avail
+
+
+def test_yolo_foot_estimate():
+    kp = {'right_knee': (100.0, 100.0, 0.9), 'right_ankle': (100.0, 200.0, 0.9)}
+    pb.estimate_foot(kp, facing=1.0)
+    assert kp['right_toe'][0] > kp['right_ankle'][0] > kp['right_heel'][0]
+    pb.estimate_foot(kp, facing=-1.0)
+    assert kp['right_toe'][0] < kp['right_ankle'][0] < kp['right_heel'][0]
 
 
 def test_coach_notes():

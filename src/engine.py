@@ -373,6 +373,10 @@ def analyze_video(path, profile_key=fp.DEFAULT_PROFILE, progress_cb=None,
         warnings.append("Back roundness needs the MediaPipe engine (it reads the rider's silhouette). "
                         "Re-run with MediaPipe to see the back and posture analysis.")
 
+    if backend == 'yolo-pose' and os.environ.get('OPENVELO_YOLO_MODEL') is None:
+        warnings.append("The Ultralytics engine has no heel or toe points, so the foot is estimated from the shank. "
+                        "Ankle and foot-angle readings are approximate; knee, hip and saddle height are unaffected.")
+
     # Stroke samples for the chart (decimated scatter + fitted curves)
     stroke = None
     if kin_res.get('curves'):
